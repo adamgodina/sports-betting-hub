@@ -652,6 +652,11 @@
   .htotals .cell b { display: block; font-size: 16px;
                      font-variant-numeric: tabular-nums; }
   .htotals .cell span { color: var(--muted); font-size: 11.5px; }
+  /* Same grey and size as the caption below it, so it annotates the figure
+     instead of competing with it. */
+  .htotals .cell b .pct {
+    color: var(--muted); font-size: 11.5px; font-weight: 400; margin-left: 5px;
+  }
   .htotals .profit b.pos { color: var(--best); }
   .htotals .profit b.neg { color: #ff7b72; }
   #hedgeBothWrap { margin-top: 14px; }
@@ -772,7 +777,7 @@
            which is how it was reached in practice anyway. The input survives
            hidden because the total is still what splits a fresh ticket. -->
       <input id="hTotal" type="hidden" value="100">
-      <div class="cell"><b id="hCost">—</b><span>cash at risk</span></div>
+      <div class="cell"><b id="hCost">—</b><span>total cost</span></div>
       <div class="cell profit"><b id="hPnlA">—</b><span id="hPnlALbl">if A wins</span></div>
       <div class="cell profit"><b id="hPnlB">—</b><span id="hPnlBLbl">if B wins</span></div>
       <div class="cell"><b id="hRoi">—</b><span id="hRoiLbl">worst-case ROI</span></div>
@@ -2895,9 +2900,13 @@ function updateHedgeTotals() {
   const money = v => (v >= 0 ? "+$" : "\u2212$") + Math.abs(v).toFixed(2);
   const put = (id, lblId, v, team, prob) => {
     const el = document.getElementById(id);
-    el.textContent = money(v);
+    // The chance sits beside the money rather than in the caption: the two
+    // belong together, since the figure only means anything weighted by how
+    // likely that outcome is. Kept in the caption's grey so it reads as an
+    // annotation on the number, not a second number.
+    el.innerHTML = esc(money(v)) + (prob ? `<span class="pct">${esc(prob)}</span>` : "");
     el.className = v >= 0 ? "pos" : "neg";
-    document.getElementById(lblId).textContent = "if " + team + " wins" + (prob || "");
+    document.getElementById(lblId).textContent = "if " + team + " wins";
   };
   // The two prices imply probabilities that sum to more than 1 (the vig) or,
   // on an arb, less. Sharing that excess between them in proportion strips it
@@ -2906,7 +2915,7 @@ function updateHedgeTotals() {
   // of them is far likelier to be the one you get.
   const qA = eProb(legQuote(A)), qB = eProb(legQuote(B));
   const tot2 = qA + qB;
-  const shown = t => (tot2 > 0 ? ` (${(t / tot2 * 100).toFixed(1)}%)` : "");
+  const shown = t => (tot2 > 0 ? `(${(t / tot2 * 100).toFixed(1)}%)` : "");
   put("hPnlA", "hPnlALbl", pnlA, A.team, shown(qA));
   put("hPnlB", "hPnlBLbl", pnlB, B.team, shown(qB));
 

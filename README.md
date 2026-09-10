@@ -1033,11 +1033,12 @@ ROI. There used to be a fifth — "total stake" — which restated the cost sitt
 next to it, so it is gone. Sizing is driven from either leg, which is how it
 was reached in practice anyway.
 
-Each outcome carries its **vig-free probability** in brackets:
+Each outcome carries its **vig-free probability** beside the money, in the
+caption's grey so it annotates the figure rather than competing with it:
 
 ```
-$176.13            +$62.86                          +$62.87                        35.69%
-cash at risk       if Colorado Rockies wins (28.6%)  if New York Yankees wins (71.4%)  ROI either way
+$176.13      +$62.86 (28.6%)             +$62.87 (71.4%)              35.69%
+total cost   if Colorado Rockies wins    if New York Yankees wins     ROI either way
 ```
 
 The two prices imply probabilities summing to more than 1 (the vig) or, on an
