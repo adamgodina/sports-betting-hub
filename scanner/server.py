@@ -360,7 +360,11 @@ def _keep_connections_warm(period=25):
 
 def main():
     if not config.ODDS_API_KEY:
-        raise SystemExit("ODDS_API_KEY not set (check your .env)")
+        raise SystemExit(
+            "ODDS_API_KEY is not set.\n"
+            "  cp .env.example .env      # then add your key from the-odds-api.com\n"
+            "Kalshi and Polymarket US need no key for market data, so that one "
+            "key is enough to see the whole board.")
     _keep_connections_warm()
     budget.watchdog()      # expires an armed run even if nothing calls in
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
