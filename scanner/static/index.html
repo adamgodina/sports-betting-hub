@@ -822,7 +822,7 @@ let includeLive = false;
    checks this — the paid scan, the free exchange poll, the heartbeat that
    authorises spending, and the depth poll — so "nothing updates on its own"
    means exactly that rather than "the expensive half is off". */
-let slowMode = false;
+let slowMode = true;
 let data = null;
 let trading = { kalshi: { configured: false }, polymarket_us: { configured: false } };
 const VENUE_LABEL = { kalshi: "Kalshi", polymarket_us: "Polymarket" };
@@ -3424,7 +3424,6 @@ liveChip.onclick = () => {
   liveChip.classList.toggle("on", includeLive);
   document.getElementById("autoBox").hidden = !includeLive;
   renderSlow();     // owns the Refresh button's visibility
-  try { localStorage.setItem("includeLive", includeLive ? "1" : "0"); } catch (e) {}
   renderInstantFlag();
   renderTable();
 };
@@ -3445,19 +3444,15 @@ document.getElementById("autoAmt").oninput = () => {
 try {
   const a = localStorage.getItem("autoAmt");
   if (a) document.getElementById("autoAmt").value = a;
-  // Safety deliberately does NOT persist in the off position: a page that
-  // loads already armed turns a stray click into a real order. Arming is one
-  // click, so every load starts safe.
-  if (localStorage.getItem("includeLive") === "1") {
-    includeLive = true;
-    liveChip.classList.add("on");
-    document.getElementById("autoBox").hidden = false;
-  }
-  if (localStorage.getItem("slowMode") === "1") slowMode = true;
+  // Three things deliberately do NOT persist, and all for the same reason: a
+  // page that loads already spending, already on the fast tier, or already
+  // armed is a page that acts before you have looked at it. So every load
+  // starts in slow mode, with live games off and the safety on. Each is one
+  // click away, and that click is a decision rather than a leftover.
   const bb = JSON.parse(localStorage.getItem("bonusBet") || "null");
   if (bb && bb.book && bb.amt > 0) { bonus = bb; anchorBook = bb.book; }
 } catch (e) {}
-renderSlow();      // sets the chip and the Refresh button from the restored state
+renderSlow();      // paints the snail and the Refresh button for the start state
 renderInstantFlag();   // must run AFTER the restore above, not before
 
 
@@ -3582,7 +3577,6 @@ window.addEventListener("pagehide", () => {
 
 function toggleSlow() {
   slowMode = !slowMode;
-  try { localStorage.setItem("slowMode", slowMode ? "1" : "0"); } catch (e) {}
   if (slowMode) {
     // stop everything in flight, and tell the server to stop authorising spend
     clearTimeout(tickTimer); tickTimer = null;

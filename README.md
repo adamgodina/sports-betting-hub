@@ -277,7 +277,12 @@ it**, and the header just reads `manual`. Measured: zero API calls over nine idl
 seconds live; one press then makes exactly one scan plus a catch-up poll and
 stops again.
 
-It is global and it persists, so it survives a reload. Refresh is normally
+**Slow mode is the startup state.** It is deliberately one of three things
+that do not persist, all for the same reason: a page that loads already
+spending, already on the fast tier, or already armed is a page that acts before
+you have looked at it. So every load starts in slow mode, with live games off
+and the safety on — each one click away, and that click a decision rather than
+a leftover. Refresh is normally
 tucked away while the board re-scans itself; in slow mode it can never hide,
 because it is the only way to update. In the HR view it pulls props rather than
 moneylines, so a manual refresh means the right thing in every market.
