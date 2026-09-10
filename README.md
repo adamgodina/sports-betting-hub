@@ -1093,6 +1093,24 @@ conditional ("must be +100 or greater"). A boosted header reads
 `FanDuel +50% ≥+100`. Legs shorter than the minimum simply don't qualify and
 stay at their raw price.
 
+### A boost has to fit its column
+
+Book columns are a fixed 94px, and the boost control lives in the header, so
+everything it shows has to fit inside that. Two states did not:
+
+* **While editing**, the header rendered the book's name plus a percent field,
+  the word "min" and a minimum-odds field — about 120px of content. The fields
+  were pushed out of frame. The name now steps aside for the duration: which
+  column you clicked is obvious, it turns yellow, and the tooltip names the
+  book. The separator is `≥` rather than the word.
+* **Once applied**, it read `DraftKings+40% ≥+100clear` on one line. The boost
+  details now sit on the SECOND line — the same strip the hover hint uses — so
+  an applied boost costs no column width at all, and `clear` appears there on
+  hover instead of reserving space permanently.
+
+Measured across all three states (idle, editing, applied) at the same 94px:
+no overflow.
+
 ### One boosted leg per market
 
 A boost is a single promo you can use on **one** bet. Applying it to every

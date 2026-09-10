@@ -39,9 +39,14 @@
      what right-aligns this whole group, so it has to live on whichever of the
      two comes first on screen — the box when it is showing, the countdown when
      it is not. */
+  /* The instant-buy box is anchored LEFT, straight after the nav. It used to
+     be pushed right, which meant the countdown next to it — whose text swings
+     between "manual", "updating…" and "update in 1.6s" — shoved the box a few
+     pixels left and right every tick. Nothing sits between the nav and the box
+     now, so it cannot move; only the controls at the far right are pinned to
+     the opposite edge. */
   header .meta { flex-shrink: 0; }
-  .autobox { margin-left: auto; }
-  .autobox[hidden] + .meta { margin-left: auto; }
+  .headactions { margin-left: auto; }
   /* The header is nowrap, so anything inside it that can break onto a second
      line does — "Safety On" split across two rows and pushed the bar taller. */
   .autobox { white-space: nowrap; flex-shrink: 0; }
@@ -404,28 +409,39 @@
   th.bookhead { cursor: pointer; transition: background .12s, color .12s; }
   th.bookhead:hover { color: var(--text); }
   th.bookhead.boosted { background: var(--arb); color: #211a00; }
-  th.bookhead { position: relative; padding-bottom: 15px; }
+  th.bookhead {
+    position: relative; padding-bottom: 15px;
+    overflow: hidden; text-overflow: ellipsis;
+  }
   .boosthint {
     position: absolute; left: 0; right: 0; bottom: 3px; text-align: center;
     visibility: hidden; font-size: 9px; font-weight: 700;
     color: var(--arb); text-transform: none; letter-spacing: 0;
   }
   th.bookhead:hover .boosthint { visibility: visible; }
-  .boostclear {
-    visibility: hidden; margin-left: 5px; font-size: 9px; font-weight: 700;
-    text-transform: none; letter-spacing: 0; opacity: .75;
+  /* Same strip as the hover hint, so an applied boost costs no column width. */
+  .boostmeta {
+    position: absolute; left: 0; right: 0; bottom: 3px; text-align: center;
+    font-size: 9px; font-weight: 800; letter-spacing: 0; text-transform: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  th.bookhead.boosted:hover .boostclear { visibility: visible; }
-  .boostpct { margin-left: 5px; font-weight: 900; letter-spacing: 0; }
-  .boostmin { font-weight: 700; font-size: 9px; opacity: .8; letter-spacing: 0; }
+  th.bookhead.boosted:hover .boostmeta::after { content: " · clear"; opacity: .75; }
+  .boostmin { font-weight: 700; opacity: .85; letter-spacing: 0; }
   .boostsep { margin: 0 3px; font-size: 9px; font-weight: 700; opacity: .75;
               text-transform: none; letter-spacing: 0; }
-  .boostinput.bmin { width: 40px; }
-  .boostlabel { margin-right: 5px; }
+  .boostinput.bmin { width: 36px; }
+  /* Editing fills the header: no name, fields centred, nothing clipped. The
+     column is 94px, so the two fields plus their separator have to live inside
+     roughly 90 — the padding is trimmed while editing to buy those pixels. */
+  th.bookhead.boosted {
+    text-align: center; white-space: nowrap; padding-left: 2px; padding-right: 2px;
+  }
+  .boostsep { font-size: 10px; opacity: .8; margin: 0 1px; }
   .boostinput {
-    width: 44px; background: rgba(0,0,0,.25); border: 1px solid rgba(0,0,0,.35);
+    width: 32px; background: rgba(0,0,0,.25); border: 1px solid rgba(0,0,0,.35);
     color: #211a00; border-radius: 4px; padding: 1px 4px; font-size: 10px;
     font-weight: 800; text-align: right; text-transform: none; letter-spacing: 0;
+    padding-left: 2px; padding-right: 3px;
   }
   .boostinput:focus { outline: 1px solid #211a00; }
   .prob { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
@@ -1279,8 +1295,11 @@ function boostHeadHtml(b) {
   const pct = boostOf(b.key), min = boostMinOf(b.key);
   const cond = (min == null || min === "") ? "" :
     ` <span class="boostmin">≥${parseFloat(min) > 0 ? "+" : ""}${min}</span>`;
+  // The boost details go on the SECOND line, in the same strip the hover hint
+  // uses. On one line the header read "DraftKings+40% ≥+100clear" inside a
+  // 94px column and simply ran off the end.
   return b.label + (pct
-    ? `<span class="boostpct">+${pct}%</span>${cond}<span class="boostclear">clear</span>`
+    ? `<span class="boostmeta">+${pct}%${cond}</span>`
     : `<span class="boosthint">boost</span>`);
 }
 
@@ -1296,11 +1315,16 @@ function editBoost(book, th) {
   boostEditing = true;
   th.classList.add("boosted");
   const curMin = boostMinOf(book);
-  th.innerHTML = `<span class="boostlabel">${bookLabel(book)}</span>` +
+  // The book name is dropped while editing. The column is a fixed width, so
+  // name + percent + "min" + minimum simply does not fit — the fields got
+  // squeezed out of frame. Which book this is stays obvious from the column
+  // you just clicked and from it turning yellow, and the title says it too.
+  th.title = `Profit boost for ${bookLabel(book)}`;
+  th.innerHTML =
     `<input class="boostinput" type="number" min="0" max="500" step="1" ` +
     `value="${cur || ""}" placeholder="%" title="boost percent" ` +
     `aria-label="profit boost percent">` +
-    `<span class="boostsep">min</span>` +
+    `<span class="boostsep">\u2265</span>` +
     `<input class="boostinput bmin" type="number" step="5" ` +
     `value="${curMin == null ? "" : curMin}" placeholder="any" ` +
     `title="minimum American price the leg must be at or longer than, e.g. 100" ` +
