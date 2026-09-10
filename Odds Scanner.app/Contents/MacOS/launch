@@ -1,0 +1,46 @@
+#!/bin/bash
+# Odds Scanner launcher: starts the local server if needed, then opens the UI.
+#
+# Finder hands an app a bare PATH, so python3 cannot be assumed to be on it and
+# the project directory cannot be assumed to be the working directory. Both are
+# resolved here rather than hard-coded, so this works from wherever the repo
+# was cloned and with whichever python the machine actually has.
+
+URL="http://localhost:8765"
+
+# The app bundle lives inside the project, so the project is four levels up:
+#   PROJECT/Odds Scanner.app/Contents/MacOS/launch
+HERE="$(cd "$(dirname "$0")" && pwd)"
+PROJECT="$(cd "$HERE/../../.." && pwd)"
+
+find_python() {
+  # A venv in the project wins, then whatever is on PATH, then the usual spots.
+  for p in "$PROJECT/.venv/bin/python3" "$PROJECT/venv/bin/python3" \
+           "$(command -v python3 2>/dev/null)" \
+           /opt/homebrew/bin/python3 /usr/local/bin/python3 \
+           /opt/anaconda3/bin/python3 /usr/bin/python3; do
+    [ -n "$p" ] && [ -x "$p" ] && { echo "$p"; return; }
+  done
+}
+
+alert() { osascript -e "display alert \"Odds Scanner\" message \"$1\""; }
+is_up() { curl -s -o /dev/null --max-time 1 "$URL/api/last"; }
+
+if ! is_up; then
+  PYTHON="$(find_python)"
+  [ -z "$PYTHON" ] && { alert "No python3 found. Install Python 3.9+ and try again."; exit 1; }
+  cd "$PROJECT" || { alert "Project folder not found at $PROJECT"; exit 1; }
+  [ -f .env ] || { alert "No .env yet. Copy .env.example to .env and add your Odds API key."; exit 1; }
+  mkdir -p data
+  nohup "$PYTHON" -m scanner.server >> data/server.log 2>&1 &
+  for _ in $(seq 1 30); do
+    is_up && break
+    sleep 0.5
+  done
+fi
+
+if is_up; then
+  open "$URL"
+else
+  alert "Server failed to start — check $PROJECT/data/server.log"
+fi

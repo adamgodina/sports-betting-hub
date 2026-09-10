@@ -1,0 +1,4 @@
+# Three dependencies; everything else is the standard library.
+requests>=2.31,<3          # every HTTP call
+python-dotenv>=0.21,<2     # reads .env
+cryptography>=42,<44       # Kalshi RSA-PSS and Polymarket US Ed25519 signing

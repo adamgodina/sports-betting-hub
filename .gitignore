@@ -1,0 +1,22 @@
+# ---- secrets: never commit these ----------------------------------------
+# .env holds live API keys for The Odds API, Kalshi and Polymarket US, and
+# the .pem is a Kalshi RSA private key that can place real orders.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+
+# ---- local state --------------------------------------------------------
+# Scan history, the cached board and the persisted credit ledger. All of it
+# is regenerated on first run and none of it belongs to anyone else.
+data/
+
+# ---- noise --------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+venv/
+.claude/

@@ -1,0 +1,3203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odds Scanner</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #171e26;
+    --panel2: #1d2630;
+    --border: #2a3543;
+    --text: #dfe7ef;
+    --muted: #8b9bab;
+    --accent: #4da3ff;
+    --best: #2ecc71;
+    --best-bg: rgba(46, 204, 113, 0.12);
+    --arb: #f1c40f;
+    --arb-bg: rgba(241, 196, 15, 0.10);
+    --live: #ff5b52;
+    --buy: #2ecc71;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  /* Wrap, not nowrap. nowrap kept it to one line by letting the items overlap
+     each other once the content outgrew the window, which is worse than a
+     second line. What actually keeps it on one line is that toggling Live
+     REMOVES width — Refresh hides at the same moment — so the thing that used
+     to push the bar onto a second line now shrinks it. */
+  header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+           margin-bottom: 14px; }
+  header .meta { margin-left: auto; flex-shrink: 0; }
+  /* The header is nowrap, so anything inside it that can break onto a second
+     line does — "Safety On" split across two rows and pushed the bar taller. */
+  .autobox { white-space: nowrap; flex-shrink: 0; }
+  .autobox .autolabel, .instantflag, .chip.safety, .chip.live { white-space: nowrap; }
+  h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .spacer { flex: 1; }
+  .meta { color: var(--muted); font-size: 12.5px; text-align: right; line-height: 1.5; }
+  .meta b { color: var(--text); font-weight: 600; }
+  .headactions { display: flex; align-items: center; gap: 10px;
+                 flex-shrink: 0; flex-wrap: nowrap; white-space: nowrap; }
+  .nav { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .navrow { display: flex; align-items: center; gap: 9px; }
+  /* Fixed width so the two tracks line up under each other rather than
+     starting wherever their label happens to end. */
+  .navlbl {
+    width: 46px; flex: 0 0 46px; color: var(--muted); font-size: 10px;
+    font-weight: 700; letter-spacing: .7px; text-transform: uppercase;
+  }
+  /* A real wheel. The LEFTMOST slot is the selection, so you change sport by
+     moving the wheel rather than by picking a tab out of a row, and the track
+     is endless in both directions. The viewport is a fixed three slots wide,
+     so adding a tenth league costs nothing on screen. */
+  .wheel {
+    display: inline-flex; align-items: center; gap: 2px; padding: 3px;
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 11px;
+  }
+  .navsports {
+    --tabw: 98px;
+    width: calc(var(--tabw) * 3);
+    overflow: hidden; touch-action: pan-y; cursor: grab;
+  }
+  .navsports.grabbing { cursor: grabbing; }
+  .navtrack { display: flex; will-change: transform; }
+  .wheelarrow {
+    flex: 0 0 auto; border: 0; background: transparent; color: var(--muted);
+    font-size: 17px; line-height: 1; padding: 5px 4px; cursor: pointer;
+    border-radius: 6px; font-family: inherit;
+  }
+  .wheelarrow:hover { color: var(--text); background: rgba(255,255,255,.06); }
+  .ntab {
+    flex: 0 0 var(--tabw); box-sizing: border-box;
+    padding: 6px 4px; border-radius: 8px; font-size: 14px; font-weight: 650;
+    color: var(--muted); cursor: pointer; user-select: none; text-align: center;
+    background: transparent; border: 0; transition: color .12s, opacity .12s;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Everything that is not the selection reads as "queued up next". */
+  .ntab { opacity: .55; }
+  .ntab.on { opacity: 1; background: var(--accent); color: #06121f; }
+  .navsubs { display: inline-flex; gap: 2px; padding: 2px;
+             background: var(--panel2); border: 1px solid var(--border);
+             border-radius: 9px; }
+  .nsub {
+    padding: 4px 12px; border-radius: 7px; font-size: 12px; font-weight: 650;
+    color: var(--muted); cursor: pointer; user-select: none;
+    background: transparent; border: 0; white-space: nowrap;
+    transition: background .12s, color .12s;
+  }
+  .nsub:hover { color: var(--text); background: rgba(255,255,255,.04); }
+  .nsub.on { color: var(--text); background: rgba(77,163,255,.18); }
+  #propScanBtn {
+    background: var(--accent); color: #06121f; border: 0; border-radius: 8px;
+    padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  #propScanBtn:disabled { opacity: .55; cursor: wait; }
+  #propGamesBox[hidden] { display: none !important; }
+  #propGamesBox input { width: 38px; text-align: right; }
+  .propbuy {
+    display: block; width: 100%; margin-top: 6px; padding: 5px 8px;
+    font-size: 11px; font-weight: 800; border-radius: 6px; cursor: pointer;
+    color: var(--buy); background: transparent; border: 1px solid var(--buy);
+  }
+  .propbuy:hover { background: var(--buy); color: #04170c; }
+  .propbuy:disabled { opacity: .5; }
+  .propbuy small { font-weight: 600; opacity: .75; font-size: 9.5px; }
+  .propbuy.short { color: var(--arb); border-color: var(--arb); }
+  .propbuy.short:hover { background: var(--arb); color: #211a00; }
+  .cellq .bookname { color: var(--accent); font-size: 10px; text-transform: capitalize; }
+  .autobox {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    border: 1px solid var(--live); border-radius: 10px;
+    background: rgba(255,91,82,.07);
+  }
+  .autobox[hidden] { display: none; }
+  .autobox .stakebox { padding: 0 9px; }
+  .autobox .stakebox input { width: 58px; padding: 5px 0; font-size: 13.5px; }
+  .autolabel { color: var(--muted); font-size: 11.5px; }
+  .instantflag {
+    font-size: 12px; font-weight: 900; letter-spacing: .6px;
+    color: #1d0503; background: var(--live); border-radius: 6px;
+    padding: 5px 10px; white-space: nowrap;
+    animation: instantpulse 1.6s ease-in-out infinite;
+  }
+  @keyframes instantpulse { 0%,100% { opacity: 1 } 50% { opacity: .62 } }
+  .instantflag[hidden], .chip[hidden] { display: none !important; }
+  .instantflag.armedoff {
+    background: none; color: var(--muted); border: 1px dashed var(--border);
+    font-weight: 700; letter-spacing: .3px; animation: none;
+  }
+  .chip.safety { font-weight: 700; }
+  .chip.safety.on {
+    color: #d6ffe8; border-color: var(--best); background: rgba(46,204,113,.12);
+  }
+  .chip.safety.on .dot { background: var(--best); }
+  .chip.safety:not(.on) {
+    color: #1d0503; border-color: var(--live); background: var(--live);
+    font-weight: 800;
+  }
+  .chip.safety:not(.on) .dot { background: #1d0503; }
+  .chip.safety.on {
+    color: #d6ffe8; border-color: var(--best); background: rgba(46,204,113,.12);
+  }
+  .chip.safety.on .dot { background: var(--best); }
+
+  td.cellq .qbtn {
+    display: none; position: absolute; inset: 0; margin: auto;
+    width: 100%; height: 100%; align-items: center; justify-content: center;
+    background: rgba(255,91,82,.92); color: #1d0503; border: 0; cursor: pointer;
+    font-size: 11px; font-weight: 800; letter-spacing: .2px;
+  }
+  td.cellq.quick:hover .qbtn { display: flex; }
+  td.cellq.quick:hover .buytag { display: none; }
+  td.cellq .qbtn:hover { background: var(--live); }
+
+  #toast {
+    position: fixed; right: 16px; bottom: 16px; z-index: 80;
+    display: flex; flex-direction: column; gap: 8px; max-width: 340px;
+  }
+  .toastmsg {
+    border-radius: 9px; padding: 10px 13px; font-size: 12.5px; line-height: 1.45;
+    border: 1px solid var(--border); background: var(--panel2); color: var(--text);
+    box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  }
+  .toastmsg.ok { border-color: var(--best); color: #d6ffe8;
+                 background: rgba(46,204,113,.14); }
+  .toastmsg.err { border-color: #ff7b72; color: #ffb3ad;
+                  background: rgba(255,123,114,.12); }
+  .toastmsg.warn { border-color: var(--arb); color: #ffe9a3;
+                   background: var(--arb-bg); }
+  .toastmsg { white-space: pre-line; font-variant-numeric: tabular-nums; }
+  .toastmsg:first-line { font-weight: 800; }
+
+  #scanBtn {
+    background: var(--accent); color: #06121f; border: 0; border-radius: 8px;
+    padding: 10px 22px; font-size: 14.5px; font-weight: 700; cursor: pointer;
+    transition: filter .15s;
+  }
+  #scanBtn:hover { filter: brightness(1.12); }
+  #scanBtn:disabled { opacity: .55; cursor: wait; }
+
+  .controls {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 10px;
+  }
+  .controls[hidden] { display: none !important; }
+  #sportChips { display: contents; }
+  .sportlbl[hidden], #sportChips[hidden] { display: none !important; }
+  .controls .lbl { color: var(--muted); font-size: 12.5px; margin-right: 2px; }
+  .chiprow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+             flex: 1 1 auto; min-height: 30px; }
+  .minibtn {
+    border: 1px solid var(--border); background: var(--panel2); color: var(--muted);
+    border-radius: 999px; padding: 5px 11px; font-size: 12px; cursor: pointer;
+    font-family: inherit;
+  }
+  .minibtn:hover { color: var(--text); border-color: var(--accent); }
+  /* Drag handling: the chip being carried fades, and a bar marks where it
+     will land. Reordering the row reorders the table columns. */
+  .chip { touch-action: none; }        /* a touch drag must not scroll the page */
+  /* Chips size to their names. The table columns are fixed width, but the
+     chips are not: a uniform pill grid made short names look padded out and
+     read worse than the ragged row, which is the arrangement you are actually
+     dragging into shape. */
+  .chiprow .chip .chiplabel { white-space: nowrap; }
+  .chiprow .chip .xbtn { flex: 0 0 auto; }
+  .chiprow .chip .dot { flex: 0 0 auto; }
+  /* The chip left behind is the GAP, drawn as an empty slot the same size as
+     the chip so the row does not jump when a drag starts. */
+  /* Specificity has to beat .chip.on / .chip.pinned, which are declared later
+     and would otherwise paint the gap as a perfectly normal-looking chip. */
+  .chiprow .chip.dragging {
+    opacity: 1; background: rgba(77,163,255,.07);
+    border-style: dashed; border-color: var(--accent);
+  }
+  .chiprow .chip.dragging .dot, .chiprow .chip.dragging .pintag,
+  .chiprow .chip.dragging .xbtn, .chiprow .chip.dragging .chiplabel {
+    visibility: hidden;
+  }
+  /* The copy that follows the cursor. */
+  /* `.chip.chipghost`, not `.chipghost`: .chip declares `transition: all .12s`
+     LATER in this stylesheet, and at equal specificity the later rule wins —
+     so a plain .chipghost rule left the transition on and the ghost eased
+     toward the cursor with a 120ms lag instead of being nailed to it. That lag
+     is the whole difference between dragging something and watching something
+     follow you.
+     Positioned with translate3d from the viewport origin rather than left/top,
+     so each move is a compositor transform instead of a layout pass. */
+  .chip.chipghost {
+    position: fixed; left: 0; top: 0; z-index: 9999; pointer-events: none;
+    margin: 0; box-shadow: 0 8px 20px rgba(0,0,0,.55); opacity: .96;
+    transition: none; will-change: transform;
+  }
+  .chipghost .xbtn { display: none; }
+  body.dragging-chip { cursor: grabbing; user-select: none; }
+  body.dragging-chip .chip { cursor: grabbing; }
+  .chiprow.dropzone { outline: 1px dashed var(--accent); outline-offset: 4px;
+                      border-radius: 8px; }
+  #hiddenRow.dragopen .chiprow::after {
+    content: "drop here to remove from the row";
+    color: var(--muted); font-size: 12px; opacity: .7;
+  }
+  #hiddenRow.dragopen .chiprow:not(:empty)::after { content: ""; }
+  .chip .xbtn {
+    margin-left: 2px; margin-right: -5px; padding: 0 4px; border-radius: 50%;
+    font-size: 13px; line-height: 1; color: var(--muted); opacity: 0;
+    transition: opacity .12s;
+  }
+  .chip:hover .xbtn { opacity: .75; }
+  .chip .xbtn:hover { opacity: 1; color: var(--live); background: rgba(255,91,82,.15); }
+  #hiddenRow .chip { opacity: .55; border-style: dashed; }
+  #hiddenRow .chip:hover { opacity: 1; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 5px 13px; cursor: pointer; user-select: none;
+    font-size: 13px; color: var(--muted); background: var(--panel2);
+    transition: all .12s;
+  }
+  .chip.on { color: var(--text); border-color: var(--accent); background: rgba(77,163,255,.10); }
+  .chip.pinned { border-color: #c792ea; background: rgba(199,146,234,.16);
+                 color: var(--text); }
+  .chip.pinned .dot { background: #c792ea; border-radius: 2px; }
+  .pintag { margin-left: 6px; font-size: 9.5px; letter-spacing: .4px;
+            text-transform: uppercase; color: #c792ea; font-weight: 700; }
+  .pinned-note { color: #c792ea; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+  .chip.on .dot { background: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+  /* let the book chips be direct flex children so the live toggle can hug
+     the right edge of the same row */
+  #chips { display: contents; }
+  #autoMeta { font-variant-numeric: tabular-nums; }
+  #nextTick { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #nextTick b { font-variant-numeric: tabular-nums; display: inline-block;
+                min-width: 3.2ch; text-align: right; }
+  #autoMeta.warn { color: var(--live); }
+
+  .rowbtns { margin-left: auto; display: flex; gap: 8px; flex: 0 0 auto; }
+  .chip.live.on {
+    color: #ffd9d6; border-color: var(--live); background: rgba(255,91,82,.14);
+  }
+  .chip.live.on .dot { background: var(--live); }
+
+  #tradingBar {
+    display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+    font-size: 12.5px; color: var(--muted); margin: 0 2px 14px;
+  }
+  #tradingBar .venue b { color: var(--text); }
+  #tradingBar .ok { color: var(--best); }
+  #tradingBar .bad { color: #ff7b72; }
+  .recheckbtn {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 6px; padding: 3px 10px; font-size: 11.5px; cursor: pointer;
+  }
+  .recheckbtn:hover { border-color: var(--accent); color: var(--text); }
+  .recheckbtn:disabled { opacity: .6; cursor: wait; }
+  .tradingerr {
+    flex-basis: 100%; margin-top: 8px; padding: 9px 12px; border-radius: 8px;
+    background: rgba(255,123,114,.09); border: 1px solid rgba(255,123,114,.28);
+    color: #ffb3ad; font-size: 12px; line-height: 1.5;
+  }
+  .tradingerr b { color: #ff7b72; }
+  .shardfix { margin-top: 8px; color: var(--text); font-size: 12px; }
+  .shardfix input {
+    width: 76px; background: var(--panel2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 3px 8px; font-size: 12px;
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .shardfix .shardnote { color: var(--muted); font-style: italic; }
+
+  #summary { color: var(--muted); font-size: 13px; margin: 0 2px 10px; }
+  #summary b { color: var(--text); }
+
+  .tablescroll { overflow-x: auto; border: 1px solid var(--border);
+                 border-radius: 10px; background: var(--panel); }
+  /* table-layout: fixed is what makes the column widths below binding. Under
+     the default auto layout they are only hints, and the browser sized each
+     book column by its header text instead — "DraftKings" 119px next to
+     "Kalshi" 56px, which is the ragged grid this is meant to avoid. */
+  table { width: 100%; border-collapse: collapse; min-width: 640px;
+          table-layout: fixed; }
+  thead th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--muted); padding: 8px 6px; background: var(--panel2);
+    border-bottom: 1px solid var(--border); font-weight: 600; white-space: nowrap;
+  }
+  thead th.num, td.cellq, td.cellbest { text-align: center; }
+  /* One width for every book column, for the same reason as the chips: column
+     widths driven by "ESPN BET" vs "Fliff" make the grid look accidental. */
+  thead th.num:not(.stickybest):not(.stickyvig), td.cellq { width: 94px; }
+  /* Fixed columns clip, so a long book name ends in an ellipsis rather than
+     being chopped mid-letter. */
+  thead th.num { overflow: hidden; text-overflow: ellipsis; }
+  tbody td { padding: 6px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr.game-top td { border-top: 2px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  /* The other half of the wide-table problem: scrolled right, the price you
+     are reading belonged to no visible game. Game and team stay pinned left
+     the way Best and vig stay pinned right, so a row is always identifiable. */
+  td.gameinfo, thead th.stickygame { left: 0; width: 112px; }
+  /* --gamew is measured from the rendered table after each render: a CSS
+     `width` on a table cell is only a hint, so hardcoding 112px here left a
+     sliver of the first book column showing through the gap. */
+  td.teamname, thead th.stickyteam { left: var(--gamew, 112px); width: 118px; }
+  td.gameinfo, td.teamname, thead th.stickygame, thead th.stickyteam {
+    position: sticky; z-index: 2; background: var(--panel);
+  }
+  thead th.stickygame, thead th.stickyteam { background: var(--panel2); }
+  /* --arb-bg is a 10%-alpha tint. On a sticky cell that means the columns
+     scrolling underneath show straight through it, so the tint is composited
+     over an opaque panel colour instead of replacing it. */
+  tr.arb td.gameinfo, tr.arb td.teamname,
+  tr.arb td.cellbest, tr.arb td.sumcell {
+    background: linear-gradient(var(--arb-bg), var(--arb-bg)), var(--panel);
+  }
+  td.teamname, thead th.stickyteam { box-shadow: 8px 0 8px -6px rgba(0,0,0,.55); }
+  .matchup { font-weight: 600; font-size: 12.5px; line-height: 1.25; }
+  .starttime { color: var(--muted); font-size: 12px; margin-top: 1px; }
+  td.teamname { font-size: 12.5px; white-space: nowrap;
+                width: 118px; max-width: 118px;
+                overflow: hidden; text-overflow: ellipsis; }
+
+  .odds { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 12.5px; }
+  .boosted { color: var(--arb); font-size: 9px; margin-left: 2px; vertical-align: 2px; }
+  th.bookhead { cursor: pointer; transition: background .12s, color .12s; }
+  th.bookhead:hover { color: var(--text); }
+  th.bookhead.boosted { background: var(--arb); color: #211a00; }
+  th.bookhead { position: relative; padding-bottom: 15px; }
+  .boosthint {
+    position: absolute; left: 0; right: 0; bottom: 3px; text-align: center;
+    visibility: hidden; font-size: 9px; font-weight: 700;
+    color: var(--arb); text-transform: none; letter-spacing: 0;
+  }
+  th.bookhead:hover .boosthint { visibility: visible; }
+  .boostclear {
+    visibility: hidden; margin-left: 5px; font-size: 9px; font-weight: 700;
+    text-transform: none; letter-spacing: 0; opacity: .75;
+  }
+  th.bookhead.boosted:hover .boostclear { visibility: visible; }
+  .boostpct { margin-left: 5px; font-weight: 900; letter-spacing: 0; }
+  .boostmin { font-weight: 700; font-size: 9px; opacity: .8; letter-spacing: 0; }
+  .boostsep { margin: 0 3px; font-size: 9px; font-weight: 700; opacity: .75;
+              text-transform: none; letter-spacing: 0; }
+  .boostinput.bmin { width: 40px; }
+  .boostlabel { margin-right: 5px; }
+  .boostinput {
+    width: 44px; background: rgba(0,0,0,.25); border: 1px solid rgba(0,0,0,.35);
+    color: #211a00; border-radius: 4px; padding: 1px 4px; font-size: 10px;
+    font-weight: 800; text-align: right; text-transform: none; letter-spacing: 0;
+  }
+  .boostinput:focus { outline: 1px solid #211a00; }
+  .prob { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  td.cellq.off { opacity: .28; }
+  td.cellq.best { background: var(--best-bg); }
+  td.cellq.best .odds { color: var(--best); }
+  .none { color: var(--muted); opacity: .5; }
+
+  td.cellq.tradeable { position: relative; cursor: pointer; }
+  td.cellq.tradeable:hover { outline: 1px solid var(--buy); outline-offset: -1px; }
+  td.cellq.tradeable .buytag {
+    display: none; position: absolute; top: 2px; right: 3px;
+    font-size: 9px; font-weight: 800; color: var(--buy); letter-spacing: .5px;
+  }
+  td.cellq.tradeable:hover .buytag { display: block; }
+
+  td.cellbest .bookname { color: var(--accent); font-size: 11px; text-transform: capitalize; }
+
+  /* Nine books make the table wider than the pane, and Place order is the
+     primary action — it must not be the thing that scrolls out of reach. The
+     two summary columns (Best, and vig/ROI with the button) are therefore
+     pinned to the right edge. BOTH have to be pinned: pinning only the vig
+     left it parked on top of Best, hiding the column it summarises. What sits
+     under them now is book columns, which you can scroll to. */
+  td.sumcell, thead th.stickyvig { right: 0; width: 86px; }
+  td.cellbest, thead th.stickybest { right: 86px; width: 92px; }
+  td.sumcell, td.cellbest, thead th.stickyvig, thead th.stickybest {
+    position: sticky; z-index: 2;
+  }
+  thead th.stickybest, td.cellbest {
+    box-shadow: -8px 0 8px -6px rgba(0,0,0,.55);
+  }
+  td.sumcell { text-align: center; width: 86px; background: var(--panel); }
+  td.cellbest { width: 92px; background: var(--panel); }
+  thead th.stickyvig, thead th.stickybest { background: var(--panel2); }
+  .sumv { font-variant-numeric: tabular-nums; font-weight: 650; }
+  .roi { font-size: 11px; color: var(--muted); }
+  tr.arb .sumv, tr.arb .roi { color: var(--arb); }
+  .arbtag {
+    display: inline-block; background: var(--arb); color: #211a00;
+    font-size: 10px; font-weight: 800; border-radius: 4px; padding: 1px 6px;
+    margin-left: 6px; letter-spacing: .5px; vertical-align: 1px;
+  }
+  .livetag {
+    display: inline-block; background: var(--live); color: #1d0503;
+    font-size: 10px; font-weight: 800; border-radius: 4px; padding: 1px 6px;
+    margin-left: 6px; letter-spacing: .5px; vertical-align: 1px;
+  }
+
+  .placebtn {
+    display: inline-block; margin-top: 6px; padding: 3px 8px;
+    font-size: 11px; font-weight: 800; letter-spacing: .2px;
+    color: var(--arb); background: transparent; border: 1px solid var(--arb);
+    border-radius: 6px; cursor: pointer; user-select: none; white-space: nowrap;
+    transition: background .12s, color .12s;
+  }
+  .placebtn:hover { background: var(--arb); color: #211a00; }
+
+  #empty { text-align: center; color: var(--muted); padding: 60px 0; }
+  #error { color: #ff7b72; margin: 10px 2px; display: none; }
+
+  /* ---- trade modal ---- */
+  #overlay {
+    position: fixed; inset: 0; background: rgba(4, 8, 12, .72);
+    display: none; align-items: center; justify-content: center; z-index: 50;
+  }
+  #overlay.open { display: flex; }
+  #modal {
+    width: 400px; max-width: calc(100vw - 32px);
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 22px;
+  }
+  #modal h2 { margin: 0 0 2px; font-size: 16px; }
+  #modal .venuename { text-transform: capitalize; color: var(--accent); }
+  #modal .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+  .fld { display: flex; align-items: center; justify-content: space-between; margin: 9px 0; }
+  .fld label { color: var(--muted); font-size: 13px; }
+  #mCountNote { color: var(--arb); font-size: 11.5px; font-weight: 600; }
+  #mAskNote { color: var(--best); font-size: 11px; font-weight: 600; }
+  #mDepthWarn { display: none; margin-top: 10px; font-size: 12px; line-height: 1.45;
+    background: var(--arb-bg); border: 1px solid rgba(241,196,15,.35);
+    color: var(--arb); border-radius: 7px; padding: 8px 11px; }
+  #mDepthWarn.show { display: block; }
+  .depthwarn { color: var(--arb); font-size: 11.5px; margin-top: 6px;
+               display: block; }
+  .crossnote { color: var(--muted); font-size: 11px; font-style: italic;
+               margin-top: 10px; line-height: 1.4; }
+  .fld input {
+    width: 120px; background: var(--panel2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 7px; padding: 7px 10px;
+    font-size: 14px; text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .fld input:focus { outline: 1px solid var(--accent); }
+  .calc { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px;
+          font-size: 13px; }
+  .calc .fld { margin: 4px 0; }
+  .calc .val { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .modalbtns { display: flex; gap: 10px; margin-top: 16px; }
+  .modalbtns button {
+    flex: 1; border: 0; border-radius: 8px; padding: 10px 0;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  #buyBtn { background: var(--buy); color: #04170c; }
+  #buyBtn:disabled { opacity: .5; cursor: wait; }
+  #cancelBtn { background: var(--panel2); color: var(--muted);
+               border: 1px solid var(--border); }
+  #tradeResult { margin-top: 12px; font-size: 12.5px; display: none;
+                 border-radius: 7px; padding: 9px 11px; }
+  #tradeResult.ok { display: block; background: var(--best-bg); color: var(--best); }
+  #tradeResult.err { display: block; background: rgba(255,123,114,.1); color: #ff7b72; }
+
+  /* no spinner arrows on any number input */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+
+  /* ---- hedge modal ---- */
+  #hedgeModal { width: 540px; max-width: calc(100vw - 32px); }
+  .hleg {
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; margin: 10px 0; background: var(--panel2);
+  }
+  .hleg .toprow { display: flex; align-items: center; gap: 12px; margin-bottom: 11px; }
+  .hleg .tname { font-weight: 650; font-size: 14.5px; flex: 1; }
+  .hleg select {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px; font-size: 13.5px; cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }
+  .hleg .botrow { display: flex; align-items: center; gap: 14px; }
+  .stakebox {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0 12px; color: var(--muted); font-size: 14px;
+  }
+  .stakebox:focus-within { border-color: var(--accent); }
+  .stakebox input {
+    width: 84px; background: none; border: 0; color: var(--text);
+    padding: 9px 0; font-size: 15px; font-weight: 600; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .stakebox input:focus { outline: none; }
+  .hleg .pays { color: var(--muted); font-size: 12.5px; flex: 1; }
+  .hleg .pays b { color: var(--text); font-weight: 600;
+                  font-variant-numeric: tabular-nums; }
+  .legtradebtn {
+    border: 0; border-radius: 8px; padding: 9px 16px; font-size: 13px;
+    font-weight: 700; cursor: pointer; background: var(--buy); color: #04170c;
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .legtradebtn:hover { filter: brightness(1.1); }
+  .legtradebtn:disabled { opacity: .5; cursor: default; filter: none; }
+  .lockbtn {
+    border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+    border-radius: 7px; padding: 6px 9px; font-size: 11px; font-weight: 700;
+    cursor: pointer; white-space: nowrap;
+  }
+  .lockbtn:hover { border-color: var(--accent); color: var(--text); }
+  .lockbtn.on { background: var(--accent); color: #06121f; border-color: var(--accent); }
+  .legmanual { font-size: 12px; color: var(--muted); font-style: italic;
+               text-align: right; max-width: 170px; line-height: 1.35; }
+  .hleg .legqty { flex: 1; font-size: 12.5px; color: var(--muted); }
+  .hleg .legqty b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .legstats {
+    display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px;
+    padding-top: 9px; border-top: 1px solid var(--border);
+    font-size: 11.5px; color: var(--muted);
+  }
+  .legstats b { color: var(--text); font-weight: 600;
+                font-variant-numeric: tabular-nums; }
+  .legstats .statmuted { font-style: italic; }
+  .legwarn {
+    margin-top: 9px; font-size: 11.5px; line-height: 1.45; color: var(--arb);
+    background: var(--arb-bg); border: 1px solid rgba(241,196,15,.3);
+    border-radius: 7px; padding: 7px 10px;
+  }
+  .legwarn:empty { display: none; }
+  .legaction { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .legswitch {
+    border: 1px solid var(--buy); background: none; color: var(--buy);
+    border-radius: 7px; padding: 4px 11px; font-size: 11.5px; font-weight: 700;
+    cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .legswitch:hover { background: var(--best-bg); }
+  .legresult { font-size: 12px; margin-top: 10px; display: none;
+               border-radius: 7px; padding: 7px 10px; }
+  .legresult.ok { display: block; background: var(--best-bg); color: var(--best); }
+  .legresult.err { display: block; background: rgba(255,123,114,.1); color: #ff7b72; }
+
+  .htotals { display: flex; gap: 22px; align-items: center; margin-top: 14px;
+             padding-top: 14px; border-top: 1px solid var(--border);
+             font-size: 13px; flex-wrap: wrap; }
+  .htotals .cell b { display: block; font-size: 16px;
+                     font-variant-numeric: tabular-nums; }
+  .htotals .cell span { color: var(--muted); font-size: 11.5px; }
+  .htotals .profit b.pos { color: var(--best); }
+  .htotals .profit b.neg { color: #ff7b72; }
+  #hedgeBothWrap { margin-top: 14px; }
+  #hedgeBothBtn {
+    width: 100%; border: 0; border-radius: 8px; padding: 11px 0;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+    background: var(--buy); color: #04170c;
+  }
+  #hedgeBothBtn:hover { filter: brightness(1.1); }
+  #hedgeBothBtn:disabled { opacity: .5; cursor: wait; filter: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="nav">
+      <div class="navrow"><span class="navlbl">Sport</span>
+        <div class="wheel">
+          <button class="wheelarrow" id="sportPrev" aria-label="previous sport">&lsaquo;</button>
+          <div class="navsports" id="navSports"><div class="navtrack" id="navTrack"></div></div>
+          <button class="wheelarrow" id="sportNext" aria-label="next sport">&rsaquo;</button>
+        </div></div>
+      <div class="navrow"><span class="navlbl">Market</span>
+        <div class="navsubs" id="navSubs"></div></div>
+    </div>
+    <div class="meta">
+      <div id="nextTick">—</div>
+      <div id="autoMeta"></div>
+    </div>
+    <div class="autobox" id="autoBox" hidden>
+      <span class="instantflag armedoff" id="instantFlag">INSTANT BUY OFF</span>
+      <label class="stakebox">$<input id="autoAmt" type="number" min="1"
+        step="1" value="50"></label>
+      <span class="autolabel">auto amount</span>
+      <span class="chip safety" id="safetyChip"
+        title="Safety is the catch on instant buy. Safety On = one-click buying is disabled; price cells open the normal order ticket. Safety Off = instant buy is live and a single click sends a real order, sized to hedge the auto amount against a freshly read sportsbook line.">
+        <span class="dot"></span><span id="safetyLabel">Safety On</span></span>
+    </div>
+    <div class="headactions">
+      <label class="stakebox" id="propGamesBox" hidden
+        title="How many games to cover. This is the ONLY thing that changes the credit cost — 1 credit per game. Games already scanned in the last few minutes are reused for free.">
+        <input id="propGames" type="number" min="1" max="15" step="1" value="5">
+        <span class="autolabel">&nbsp;games</span></label>
+      <button id="propScanBtn" hidden onclick="scanProps(this)"
+        title="Scan 1+ home run props. 1 Odds API credit per game; recently scanned games are free.">Scan HR props</button>
+      <button id="scanBtn" onclick="doScan()"
+        title="Pull fresh sportsbook odds for every enabled sport — this spends 1 Odds API credit per sport. Exchange prices update on their own.">Refresh</button>
+      <!-- Live games sits LAST so it keeps the same spot when Refresh hides
+           itself; with the order reversed, toggling live slid the chip you had
+           just clicked out from under the cursor. -->
+      <span class="chip live" id="liveChip"
+        title="Show games that have already started. They re-price fastest, and having one on screen is what puts the board on the 1-second clock.">
+        <span class="dot"></span>Live games</span>
+    </div>
+  </header>
+
+  <div class="controls">
+    <span class="lbl">Compare books:</span>
+    <div id="chips" class="chiprow"></div>
+    <div class="rowbtns">
+      <button class="minibtn" id="allOnBtn"
+        title="Compare every book in the row">All on</button>
+      <button class="minibtn" id="allOffBtn"
+        title="Turn every book off, so you can switch on just the two you want">All off</button>
+    </div>
+  </div>
+
+  <div class="controls hiddenrow" id="hiddenRow" hidden>
+    <span class="lbl">Hidden:</span>
+    <div id="hiddenChips" class="chiprow"></div>
+    <button class="minibtn" id="addAllBtn"
+      title="Put every hidden book back in the row">Add all</button>
+  </div>
+
+  <div id="tradingBar">Checking trading accounts…</div>
+
+  <div id="error"></div>
+  <div id="summary"></div>
+  <div id="tableWrap"></div>
+</div>
+
+<div id="overlay">
+  <div id="modal">
+    <h2><span class="venuename" id="mVenue"></span> · <span id="mTeam"></span></h2>
+    <div class="sub" id="mGame"></div>
+    <div class="fld"><label>Limit price <span id="mAskNote"></span></label>
+      <input id="mPrice" type="number" min="0.01" max="0.99" step="0.01"></div>
+    <div class="fld"><label>Contracts <span id="mCountNote"></span></label>
+      <input id="mCount" type="number" min="1" step="1" value="10"></div>
+    <div class="calc">
+      <div class="fld"><label>Cost</label><span class="val" id="mCost">—</span></div>
+      <div class="fld"><label>Payout if wins</label><span class="val" id="mPayout">—</span></div>
+      <div class="fld" id="mFeeRow" style="display:none"><label id="mFeeLabel">Est. taker fee</label>
+        <span class="val" id="mFee">—</span></div>
+      <div class="fld"><label>Available at this price</label>
+        <span class="val" id="mDepth">—</span></div>
+      <div class="fld"><label>Account balance</label><span class="val" id="mBal">—</span></div>
+      <div id="mDepthWarn"></div>
+      <div class="crossnote">Re-quoted against the live book at submit time and
+        crossed 1&cent; through the ask, so it fills at the resting ask rather
+        than sitting below it. If the live book can't be read, the order is
+        refused rather than priced off this scan. Fees are charged at execution
+        and are not part of the limit price.</div>
+    </div>
+    <div class="modalbtns">
+      <button id="cancelBtn" onclick="closeModal()">Cancel</button>
+      <button id="buyBtn" onclick="submitTrade()">Buy</button>
+    </div>
+    <div id="tradeResult"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="hedgeOverlay" style="position:fixed;inset:0;background:rgba(4,8,12,.72);display:none;align-items:center;justify-content:center;z-index:50;">
+  <div id="hedgeModal" style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;">
+    <h2 style="margin:0 0 2px;font-size:16px;">Place order</h2>
+    <div class="sub" id="hGame"></div>
+    <div id="hLegs"></div>
+    <div class="htotals">
+      <div class="cell">
+        <label class="stakebox">$<input id="hTotal" type="number" min="0" step="1" value="100"></label>
+        <span>total stake</span>
+      </div>
+      <div class="cell"><b id="hCost">—</b><span>actual cost</span></div>
+      <div class="cell profit"><b id="hPnlA">—</b><span id="hPnlALbl">if A wins</span></div>
+      <div class="cell profit"><b id="hPnlB">—</b><span id="hPnlBLbl">if B wins</span></div>
+      <div class="cell"><b id="hRoi">—</b><span id="hRoiLbl">worst-case ROI</span></div>
+    </div>
+    <div id="hedgeBothWrap" style="display:none">
+      <button id="hedgeBothBtn" onclick="hedgeTradeBoth()">Place both orders</button>
+    </div>
+    <div class="crossnote">Limit orders, whole contracts, re-quoted against the
+      live book at submit time and crossed 1&cent; through the ask so they fill
+      at the resting price. Fees are charged at execution, not in the limit.
+      Cost and profit shown are after rounding.</div>
+    <div class="modalbtns">
+      <button id="hCloseBtn" onclick="closeHedge()"
+        style="flex:1;border:1px solid var(--border);border-radius:8px;padding:10px 0;font-size:14px;font-weight:700;cursor:pointer;background:var(--panel2);color:var(--muted);">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const EXCHANGES = new Set(["kalshi", "polymarket_us"]);
+let BOOKS = [
+  { key: "draftkings",  label: "DraftKings" },
+  { key: "fanduel",     label: "FanDuel" },
+  { key: "betmgm",      label: "BetMGM" },
+  { key: "espnbet",     label: "ESPN BET" },
+  { key: "fanatics",    label: "Fanatics" },
+  { key: "fliff",       label: "Fliff" },
+  { key: "hardrockbet", label: "Hard Rock" },
+  { key: "kalshi",         label: "Kalshi" },
+  { key: "polymarket_us",  label: "Polymarket" },
+];
+/* Double-clicking a book pins it: one of the two legs must then come from it,
+   whatever it costs. That is the shape of a promo you can only use once (a
+   free bet, an odds boost, a profit-boost token) — the pinned side is the leg
+   you are obliged to place there, and every other selected book still competes
+   for the OTHER leg. null = no constraint, best price wins on both sides. */
+let anchorBook = null;
+let selected = new Set(BOOKS.map(b => b.key));
+let sportsOn = null;          // null = all; otherwise a Set of sport keys
+let includeLive = false;
+let data = null;
+let trading = { kalshi: { configured: false }, polymarket_us: { configured: false } };
+const VENUE_LABEL = { kalshi: "Kalshi", polymarket_us: "Polymarket" };
+const BOOK_LABEL = { draftkings: "DraftKings", fanduel: "FanDuel",
+  betmgm: "BetMGM", espnbet: "ESPN BET", fanatics: "Fanatics", fliff: "Fliff",
+  hardrockbet: "Hard Rock" };
+/* A game's identity across snapshots. Object identity is NOT it: every paid
+   scan replaces the whole game list with fresh objects from the server, so
+   anything that remembers a game by reference is comparing against objects
+   that no longer exist a second later. */
+function gameKey(g) {
+  return `${g.sport || "mlb"}|${g.away}|${g.home}|${g.start}`;
+}
+
+function bookLabel(key) {
+  const b = BOOKS.find(x => x.key === key);
+  return b ? b.label : (BOOK_LABEL[key] || VENUE_LABEL[key] || key);
+}
+const VENUE_THETA = { kalshi: 0.07, polymarket_us: 0.06 };  // taker fee coefficients
+let sortedGames = [];   // games in current render order
+let pointerInTable = false;   // freeze re-sorting while you're aiming at a button
+let needDepthSoon = false;    // pull top-5 sizes right after the next price poll
+let safetyOn = true;          // auto-hedge quickbuys by default
+let modalCtx = null;    // quote being traded
+
+/* ---------------- the book row ----------------
+
+   Three independent states per book, because they answer different questions:
+     in the row + on   – compared, and the best price can come from it
+     in the row + off  – greyed, still visible so you can see what you are
+                         choosing not to use, and one tap away from returning
+     hidden            – gone from the row and from the table entirely
+   Order is yours too: dragging a chip moves its column.
+
+   Layout survives reloads, since the point of arranging it is not doing it
+   again tomorrow. Hidden books are still FETCHED — a book costs nothing (the
+   Odds API bills bookmakers in blocks of ten), so hiding is purely display and
+   un-hiding is instant rather than a re-scan. */
+const DEFAULT_ORDER = BOOKS.map(b => b.key);
+let bookOrder  = DEFAULT_ORDER.slice();   // shown, left to right
+let bookHidden = [];                      // pulled out of the row
+
+function mlBooks() {
+  return bookOrder.map(k => ({ key: k, label: bookLabel(k) }));
+}
+
+function saveBookLayout() {
+  if (propView) return;                   // props derives its own row
+  try {
+    localStorage.setItem("bookLayout", JSON.stringify({
+      order: bookOrder, hidden: bookHidden,
+      off: bookOrder.filter(k => !selected.has(k)),
+    }));
+  } catch (e) {}
+}
+
+function loadBookLayout() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem("bookLayout") || "null"); }
+  catch (e) {}
+  if (!saved || !Array.isArray(saved.order)) return;
+  const known = new Set(DEFAULT_ORDER);
+  const seen = new Set();
+  const keep = k => known.has(k) && !seen.has(k) && seen.add(k);
+  bookOrder  = saved.order.filter(keep);
+  bookHidden = (saved.hidden || []).filter(keep);
+  // A book added to the app since this layout was saved has to end up
+  // somewhere, or it would be invisible with no way to bring it back.
+  for (const k of DEFAULT_ORDER) if (!seen.has(k)) bookOrder.push(k);
+  if (!bookOrder.length) { bookOrder = DEFAULT_ORDER.slice(); bookHidden = []; }
+  const off = new Set(saved.off || []);
+  selected = new Set(bookOrder.filter(k => !off.has(k)));
+}
+
+function chipNode(key, label, hidden) {
+  const el = document.createElement("span");
+  el.className = "chip";
+  el.dataset.book = key;
+  el.innerHTML = `<span class="dot"></span><span class="chiplabel"></span>` +
+    `<span class="pintag" hidden>1 leg</span>` +
+    `<span class="xbtn" title="Remove ${esc(label)} from the row">${hidden ? "+" : "\u00d7"}</span>`;
+  el.querySelector(".chiplabel").textContent = label;
+  return el;
+}
+
+/* Rebuilt only when the row's MEMBERSHIP or order changes — never on a plain
+   on/off tap. That matters more than it looks: replacing the node between the
+   two halves of a double-click is what stopped the browser from ever counting
+   one, so pinning by double-click silently did nothing. */
+function renderChips() {
+  const row = document.getElementById("chips");
+  const tray = document.getElementById("hiddenChips");
+  row.innerHTML = ""; tray.innerHTML = "";
+  for (const b of (propView ? BOOKS : mlBooks()))
+    row.appendChild(chipNode(b.key, b.label, false));
+  if (!propView)
+    for (const k of bookHidden) tray.appendChild(chipNode(k, bookLabel(k), true));
+  document.getElementById("hiddenRow").hidden = propView || !bookHidden.length;
+  wireChips(row, false);
+  wireChips(tray, true);
+  paintChips();
+}
+
+/* State-only update: touches classes, never the nodes themselves. */
+function paintChips() {
+  for (const el of document.querySelectorAll("#chips .chip")) {
+    const k = el.dataset.book;
+    el.classList.toggle("on", selected.has(k));
+    el.classList.toggle("pinned", anchorBook === k);
+    el.querySelector(".pintag").hidden = anchorBook !== k;
+    el.title = anchorBook === k
+      ? `${bookLabel(k)} is pinned — one leg of every game must come from it. `
+        + `Double-click to unpin.`
+      : `Click to compare ${bookLabel(k)} or grey it out. Double-click to PIN `
+        + `it: one leg must then come from ${bookLabel(k)}, with every other `
+        + `book still competing for the other leg. Drag to reorder, \u00d7 to `
+        + `remove it from the row.`;
+  }
+  for (const el of document.querySelectorAll("#hiddenChips .chip"))
+    el.title = `Click or drag to put ${bookLabel(el.dataset.book)} back in the row`;
+}
+
+function wireChips(container, isTray) {
+  for (const el of container.querySelectorAll(".chip")) {
+    const k = el.dataset.book;
+    el.querySelector(".xbtn").onclick = e => {
+      e.stopPropagation();
+      isTray ? showBook(k) : hideBook(k);
+    };
+    el.onclick = e => {
+      if (Date.now() < suppressClickUntil) return;   // this click ended a drag
+      if (isTray) { showBook(k); return; }
+      // The browser's own click counter, which follows the OS double-click
+      // speed. Hand-rolling this with timestamps needed a threshold, and any
+      // threshold is wrong for somebody: a real double-click measured 477ms
+      // here and a 400ms window silently dropped it.
+      if (e.detail === 2) pinBook(k);
+      else if (e.detail === 1) toggleBook(k);
+      // detail > 2 (triple and beyond) is deliberately ignored
+    };
+    el.onpointerdown = ev => startDrag(ev, el, k);
+  }
+}
+
+/* Dragging is built on pointer events, not the HTML5 drag-and-drop API.
+   HTML5 DnD needs a dataTransfer dance, behaves differently across browsers,
+   and does not fire at all for touch — pointer events cover mouse, trackpad
+   and touch with one path, and let the drop indicator be drawn exactly where
+   the chip will land.
+
+   A press only becomes a drag after DRAG_SLOP pixels of movement, so an
+   ordinary tap still reaches the click handler untouched — which matters here,
+   because click and double-click on these same chips do the on/off and pin. */
+const DRAG_SLOP = 5;
+let dragKey = null, dragEl = null, dragGhost = null;
+let dragFrom = null, dragGrab = null, dragMoved = false;
+let suppressClickUntil = 0;
+let dragRaf = null, dragAt = null;
+
+function dragReflow() {
+  dragRaf = null;
+  if (!dragKey || !dragAt || !dragEl) return;
+  const row = rowUnder(dragAt.x, dragAt.y);
+  if (!row) return;
+  for (const c of document.querySelectorAll(".chiprow"))
+    c.classList.toggle("dropzone", c === row);
+  const ref = insertRef(row, dragAt.x, dragAt.y);
+  if (ref !== dragEl && !(ref === null && dragEl.parentElement === row
+                          && dragEl === row.lastElementChild))
+    row.insertBefore(dragEl, ref);
+}
+
+/* Real drag and drop: the chip you grabbed follows the cursor, and the row
+   opens a gap where it would land.
+
+   The first version only faded the chip in place and drew a marker bar. That
+   is a preview of a drop, not a drag — you could not see the thing you were
+   moving. Now the chip element itself is moved through the DOM as you go, so
+   the row genuinely reflows in real time, and a floating copy tracks the
+   pointer. The order is then read back OFF the DOM, which means what you
+   release is exactly what you were looking at. */
+function startDrag(ev, el, k) {
+  if (ev.button !== undefined && ev.button !== 0) return;
+  if (ev.target.closest(".xbtn")) return;      // the remove button is not a handle
+  dragKey = k; dragEl = el; dragMoved = false;
+  dragFrom = { x: ev.clientX, y: ev.clientY };
+  const before = { order: bookOrder.slice(), hidden: bookHidden.slice() };
+
+  const onMove = e => {
+    if (!dragKey) return;
+    if (!dragMoved) {
+      if (Math.abs(e.clientX - dragFrom.x) < DRAG_SLOP &&
+          Math.abs(e.clientY - dragFrom.y) < DRAG_SLOP) return;
+      beginDrag(el, e);
+    }
+    e.preventDefault();
+    // Cheap and immediate: the ghost tracks the pointer on the compositor.
+    moveGhost(e.clientX, e.clientY);
+    // Expensive and deferred: hit-testing reads elementFromPoint and every
+    // chip's rect, and reordering mutates the DOM. Doing that inline on every
+    // pointermove forces a synchronous layout at pointer frequency, which is
+    // what made the drag feel heavy. Once per animation frame is plenty — the
+    // gap only has to be right by the time you can see it.
+    dragAt = { x: e.clientX, y: e.clientY };
+    if (dragRaf === null) dragRaf = requestAnimationFrame(dragReflow);
+  };
+
+  const onUp = e => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+    if (dragRaf !== null) { cancelAnimationFrame(dragRaf); dragRaf = null; }
+    if (dragMoved) {
+      dragAt = { x: e.clientX, y: e.clientY };
+      dragReflow();                    // land on the gap that was on screen
+      endDrag();
+      commitDomOrder(before);
+      suppressClickUntil = Date.now() + 300;   // the drag must not also click
+    }
+    dragKey = null; dragEl = null; dragMoved = false;
+  };
+
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
+}
+
+function beginDrag(el, e) {
+  dragMoved = true;
+  try { el.setPointerCapture(e.pointerId); } catch (err) {}
+  const r = el.getBoundingClientRect();
+  dragGrab = { x: e.clientX - r.left, y: e.clientY - r.top };
+  dragGhost = el.cloneNode(true);
+  dragGhost.classList.add("chipghost");
+  dragGhost.classList.remove("dragging");
+  dragGhost.style.width = r.width + "px";
+  dragGhost.style.height = r.height + "px";
+  document.body.appendChild(dragGhost);
+  el.classList.add("dragging");        // the gap left behind
+  document.body.classList.add("dragging-chip");
+  // An empty Hidden row is display:none, which would leave nowhere to drop a
+  // book you want to remove. Reveal it for the duration of the drag.
+  document.getElementById("hiddenRow").hidden = false;
+  document.getElementById("hiddenRow").classList.add("dragopen");
+  moveGhost(e.clientX, e.clientY);
+}
+
+function moveGhost(x, y) {
+  if (!dragGhost) return;
+  dragGhost.style.transform =
+    `translate3d(${Math.round(x - dragGrab.x)}px, ${Math.round(y - dragGrab.y)}px, 0) scale(1.04)`;
+}
+
+function endDrag() {
+  if (dragGhost) dragGhost.remove();
+  dragGhost = null;
+  if (dragEl) dragEl.classList.remove("dragging");
+  document.body.classList.remove("dragging-chip");
+  const hr = document.getElementById("hiddenRow");
+  hr.classList.remove("dragopen");
+  for (const c of document.querySelectorAll(".chiprow")) c.classList.remove("dropzone");
+}
+
+function rowUnder(x, y) {
+  const el = document.elementFromPoint(x, y);   // the ghost is pointer-events:none
+  const row = el && el.closest(".chiprow");
+  if (row) return row;
+  // Forgiving vertically: dragging just above or below a row still counts,
+  // rather than the gap snapping back while you are between the two.
+  let best = null, bestDist = 60;
+  for (const id of ["chips", "hiddenChips"]) {
+    const c = document.getElementById(id);
+    // getClientRects(), not offsetParent: offsetParent reads null for plenty of
+    // perfectly visible elements depending on the ancestors' positioning, which
+    // made this fallback skip every row.
+    if (!c.getClientRects().length) continue;
+    const r = c.getBoundingClientRect();
+    const d = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+    if (d <= bestDist) { bestDist = d; best = c; }
+  }
+  return best;
+}
+
+/* The chip the dragged one should be inserted BEFORE, or null to append.
+
+   Hit-testing is 2D, not just horizontal. The chip row is a wrapping flex row,
+   so with nine books it is two or three lines deep — comparing x alone picked
+   an insertion point on whichever line happened to come first, and dragging
+   between lines did nothing at all. Vertical distance is weighted heavily so
+   the line you are actually over wins before x is even considered. */
+function insertRef(container, x, y) {
+  let best = null, bestD = Infinity, after = false;
+  for (const c of container.querySelectorAll(".chip")) {
+    if (c === dragEl) continue;
+    const r = c.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const d = Math.abs(cy - y) * 4 + Math.abs(cx - x);
+    if (d < bestD) { bestD = d; best = c; after = x > cx; }
+  }
+  if (!best) return null;
+  let ref = after ? best.nextElementSibling : best;
+  while (ref === dragEl) ref = ref.nextElementSibling;   // never "before itself"
+  return ref;
+}
+
+/* Read the arrangement back off the DOM, so the committed state is exactly
+   what was on screen when you let go. */
+function commitDomOrder(before) {
+  const read = id => [...document.querySelectorAll(`#${id} .chip`)].map(c => c.dataset.book);
+  let row = read("chips"), tray = read("hiddenChips");
+  if (!row.length) {                       // never leave an empty board
+    row = [tray.pop()];
+  }
+  const wasInRow = new Set(before.order);
+  for (const k of tray) {
+    selected.delete(k);
+    if (anchorBook === k) anchorBook = null;
+  }
+  // Only a book that has just ARRIVED in the row gets switched on. Adding it
+  // unconditionally meant dragging a greyed-out book to reorder it quietly
+  // turned it back on, changing which prices count.
+  for (const k of row) if (!wasInRow.has(k)) selected.add(k);
+  bookOrder = row; bookHidden = tray;
+  afterBookChange(true);
+}
+
+function moveBook(k, dest, index) {
+  bookOrder  = bookOrder.filter(x => x !== k);
+  bookHidden = bookHidden.filter(x => x !== k);
+  if (dest === "row") {
+    bookOrder.splice(Math.min(index, bookOrder.length), 0, k);
+    selected.add(k);
+  } else {
+    bookHidden.splice(Math.min(index, bookHidden.length), 0, k);
+    selected.delete(k);
+    if (anchorBook === k) anchorBook = null;
+    if (!bookOrder.length) {           // never leave an empty board
+      bookOrder = [bookHidden.pop()];
+      selected.add(bookOrder[0]);
+    }
+  }
+  afterBookChange(true);
+}
+
+function hideBook(k) { moveBook(k, "tray", bookHidden.length); }
+function showBook(k) { moveBook(k, "row", bookOrder.length); }
+
+function toggleBook(k) {
+  if (selected.has(k)) selected.delete(k);
+  else selected.add(k);
+  // A pinned book you are no longer comparing is a constraint with nothing
+  // behind it, so greying it out drops the pin too.
+  if (anchorBook && !selected.has(anchorBook)) anchorBook = null;
+  afterBookChange(false);
+}
+
+function pinBook(k) {
+  // The two single clicks inside a double-click have already toggled this book
+  // off and back on, so its on/off state is unchanged by the time we get here.
+  selected.add(k);
+  anchorBook = anchorBook === k ? null : k;
+  afterBookChange(false);
+}
+
+function afterBookChange(structural) {
+  if (!propView) BOOKS = mlBooks();
+  if (structural) renderChips(); else paintChips();
+  saveBookLayout();
+  renderTable();
+}
+
+/* ---------------- odds layer ----------------
+   One place that turns a raw quote into the price everything else reasons
+   about. Every comparison, ranking, vig, hedge size and label goes through
+   eProb()/eAmerican(), so a new adjustment (today: profit boosts) applies
+   everywhere at once instead of being patched into each call site. */
+const Odds = {
+  decimal: p => 1 / p,
+  american(p) {
+    const d = 1 / p;
+    return d >= 2 ? `+${Math.round((d - 1) * 100)}`
+                  : `-${Math.round(100 / (d - 1))}`;
+  },
+  /* A sportsbook profit boost lifts the PROFIT, not the stake: +200 with a
+     40% boost pays 280 profit — decimal 3.0 becomes 1 + 2 × 1.4 = 3.8. */
+  boostProb(p, pct) {
+    if (!pct || !(p > 0 && p < 1)) return p;
+    const d = 1 / p;
+    return 1 / (1 + (d - 1) * (1 + pct / 100));
+  },
+};
+
+/* Boosts are a sportsbook promotion, so they are offered on book columns only.
+   An exchange price is what you actually pay, and must never be re-scaled. */
+const BOOST_STEPS = [0, 10, 15, 20, 25, 30, 33, 40, 50, 75, 100];
+let boosts = {};
+let boostEditing = false;   // a boost field is open; don't re-render under it
+try { boosts = JSON.parse(localStorage.getItem("boosts") || "{}"); } catch (e) {}
+
+function boostable(book) { return !EXCHANGES.has(book); }
+/* A boost is stored as {pct, min} — the percentage, and an optional minimum
+   American price the leg must be at or longer than ("must be +100 or greater"
+   is a common promo condition). Legs shorter than that don't qualify, so the
+   boost simply doesn't apply to them. Older single-number entries still load. */
+function boostCfg(book) {
+  if (!boostable(book)) return null;
+  const v = boosts[book];
+  if (v == null) return null;
+  const c = (typeof v === "number") ? { pct: v, min: null } : v;
+  return c && c.pct ? c : null;
+}
+function boostOf(book) { const c = boostCfg(book); return c ? c.pct : 0; }
+function boostMinOf(book) { const c = boostCfg(book); return c ? c.min : null; }
+
+function americanToProb(a) {
+  a = parseFloat(a);
+  if (!isFinite(a)) return null;
+  if (a >= 100) return 100 / (a + 100);
+  if (a <= -100) return -a / (-a + 100);
+  return null;                       // between -100 and +100 isn't a real price
+}
+
+/* Does this leg meet the promo's minimum-price condition? */
+function boostQualifies(q, book) {
+  const min = boostMinOf(book);
+  if (min == null) return true;
+  const p = americanToProb(min);
+  if (p == null) return true;
+  return q.prob <= p + 1e-9;         // at or longer than the minimum
+}
+
+function setBoost(book, pct, min) {
+  if (pct) boosts[book] = { pct: pct, min: (min == null ? null : min) };
+  else delete boosts[book];
+  try { localStorage.setItem("boosts", JSON.stringify(boosts)); } catch (e) {}
+  sortedGames = [];                  // ranking changes, so re-sort from scratch
+  renderTable();
+}
+
+
+/* A profit boost is a single promo you can use on ONE bet. Applying it to
+   every quote from that book would boost both sides of a market at once,
+   which no promo lets you do and which invents arbitrage you cannot take.
+   So per game, each boosted book gets its boost placed on exactly one side:
+   the side where it buys the most — i.e. where the boosted price beats the
+   best rival price on that side by the widest margin. The other side of that
+   book stays at its raw price. `q._boostOn` marks the chosen leg, and eProb()
+   reads that flag, so every downstream calculation inherits the constraint. */
+function applyBoostPlan(game) {
+  for (const q of game.quotes) q._boostOn = false;
+  const books = [...new Set(game.quotes
+    .filter(q => boostOf(q.book) && selected.has(q.book))
+    .map(q => q.book))];
+  for (const bk of books) {
+    const pct = boostOf(bk);
+    let pick = null;
+    for (const q of game.quotes) {
+      if (q.book !== bk || !boostQualifies(q, bk)) continue;
+      const boosted = Odds.boostProb(q.prob, pct);
+      // best price anyone else offers on this same side
+      let rival = 1;
+      for (const o of game.quotes)
+        if (o !== q && o.team === q.team && selected.has(o.book))
+          rival = Math.min(rival, o.prob);
+      const gain = rival - boosted;      // >0 means the boost wins that side
+      if (!pick || gain > pick.gain) pick = { q, gain };
+    }
+    if (pick) pick.q._boostOn = true;
+  }
+}
+
+/* Effective price of a quote — boosted only on the one leg the plan chose. */
+function boostedNow(q) { return q && q._boostOn ? boostOf(q.book) : 0; }
+function eProb(q) { return q ? Odds.boostProb(q.prob, boostedNow(q)) : null; }
+function eAmerican(q) {
+  return boostedNow(q) ? Odds.american(eProb(q)) : q.american;
+}
+
+/* The boost control stays invisible until you want it: a book header shows a
+   faint "boost" hint on hover, clicking turns the header yellow and swaps in a
+   field you type the percentage into. Enter or clicking away applies it; Esc
+   cancels; clearing it (or 0) removes the boost. */
+function boostHeadHtml(b) {
+  if (!boostable(b.key)) return b.label;
+  const pct = boostOf(b.key), min = boostMinOf(b.key);
+  const cond = (min == null || min === "") ? "" :
+    ` <span class="boostmin">≥${parseFloat(min) > 0 ? "+" : ""}${min}</span>`;
+  return b.label + (pct
+    ? `<span class="boostpct">+${pct}%</span>${cond}<span class="boostclear">clear</span>`
+    : `<span class="boosthint">boost</span>`);
+}
+
+function boostHeadClass(b) {
+  if (!boostable(b.key)) return "";
+  return " bookhead" + (boostOf(b.key) ? " boosted" : "");
+}
+
+function editBoost(book, th) {
+  if (th.querySelector("input")) return;          // already editing
+  const cur = boostOf(book);
+  if (cur) { setBoost(book, 0); return; }         // already boosted -> clear it
+  boostEditing = true;
+  th.classList.add("boosted");
+  const curMin = boostMinOf(book);
+  th.innerHTML = `<span class="boostlabel">${bookLabel(book)}</span>` +
+    `<input class="boostinput" type="number" min="0" max="500" step="1" ` +
+    `value="${cur || ""}" placeholder="%" title="boost percent" ` +
+    `aria-label="profit boost percent">` +
+    `<span class="boostsep">min</span>` +
+    `<input class="boostinput bmin" type="number" step="5" ` +
+    `value="${curMin == null ? "" : curMin}" placeholder="any" ` +
+    `title="minimum American price the leg must be at or longer than, e.g. 100" ` +
+    `aria-label="minimum odds">`;
+  const [inp, minInp] = th.querySelectorAll("input");
+  inp.focus();
+  inp.select();
+  let closed = false;
+  const finish = apply => {
+    if (closed) return;
+    closed = true;
+    boostEditing = false;
+    if (!apply) { setBoost(book, cur, curMin); return; }
+    const v = Math.max(0, Math.min(500, parseFloat(inp.value) || 0));
+    const raw = minInp.value.trim();
+    const mn = raw === "" ? null : parseFloat(raw);
+    setBoost(book, v, (mn == null || !isFinite(mn)) ? null : mn);
+  };
+  const key = e => {
+    if (e.key === "Enter") finish(true);
+    else if (e.key === "Escape") finish(false);
+  };
+  inp.onkeydown = key; minInp.onkeydown = key;
+  // only close when focus leaves the pair, so tabbing between them is fine
+  const maybeBlur = () => setTimeout(() => {
+    if (!th.contains(document.activeElement)) finish(true);
+  }, 0);
+  inp.onblur = maybeBlur; minInp.onblur = maybeBlur;
+}
+
+function fmtTime(iso) {
+  return new Date(iso).toLocaleString([], {
+    weekday: "short", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "2-digit" });
+}
+
+function quoteFor(game, book, team) {
+  return game.quotes.find(q => q.book === book && q.team === team) || null;
+}
+
+function bestFor(game, team) {
+  let best = null;
+  for (const q of game.quotes)
+    if (selected.has(q.book) && q.team === team &&
+        (!best || eProb(q) < eProb(best))) best = q;
+  return best;
+}
+
+function analyze(game) {
+  let ba = bestFor(game, game.away), bh = bestFor(game, game.home);
+  if (anchorBook && selected.has(anchorBook)) {
+    // One leg has to be the pinned book. Which one is not obvious: pinning it
+    // to the side where it happens to be cheapest can be the wrong call, since
+    // that may be the side another book beats it on by even more. So price
+    // both arrangements and keep whichever pair is cheaper overall.
+    const pa = quoteFor(game, anchorBook, game.away);
+    const ph = quoteFor(game, anchorBook, game.home);
+    const pairs = [];
+    if (pa && bh) pairs.push([pa, bh]);
+    if (ph && ba) pairs.push([ba, ph]);
+    if (!pairs.length) return null;   // that book doesn't quote this game
+    let pick = null;
+    for (const [x, y] of pairs) {
+      const sum = eProb(x) + eProb(y);
+      if (!pick || sum < pick.sum) pick = { ba: x, bh: y, sum };
+    }
+    ba = pick.ba; bh = pick.bh;
+  }
+  if (!ba || !bh) return null;
+  const sum = eProb(ba) + eProb(bh);
+  return { ba, bh, sum, roi: sum < 1 ? (1 / sum - 1) * 100 : 0 };
+}
+
+// Kalshi and Polymarket US both sell WHOLE contracts only — never fractional.
+// (polymarket.us reports minimumTradeQty 0.01 in its feed, but its own docs
+// state all trades execute in whole contracts, so that field is ignored.)
+function roundContracts(q, n) {
+  return Math.max(1, Math.round(n));
+}
+
+function canTrade(q) {
+  return q && q.meta && trading[q.book] && trading[q.book].configured;
+}
+
+function qbtnHtml(gi, q, team, plan) {
+  const sweep = (q.meta || {}).sweep;
+  let tip = plan.why + " \u00b7 cost $" + plan.cost.toFixed(2);
+  if (safetyOn)
+    tip += " \u00b7 the sportsbook line is re-read at click and the size "
+        + "recomputed from it, so the final count may differ from this estimate";
+  if (sweep != null && plan.contracts > sweep)
+    tip += " \u00b7 WARNING: only " + sweep.toLocaleString() + " fillable within "
+        + HEDGE_SLIP_C + "c - hedge would be short";
+  return '<button class="qbtn" title="' + esc(tip) + '"' +
+    ' onclick="event.stopPropagation();quickBuy(' + gi + ",'" + q.book + "','" +
+    encodeURIComponent(team) + '\',this)">\u26a1 ' + (safetyOn ? "~" : "") + plan.contracts + '</button>';
+}
+
+function sideCells(game, gi, team, best) {
+  let html = "";
+  if (best === undefined) best = bestFor(game, team);
+  for (const b of BOOKS) {
+    const q = quoteFor(game, b.key, team);
+    const isBest = q && best && selected.has(b.key) && q === best;
+    const off = !selected.has(b.key);
+    if (!q) {
+      html += `<td class="cellq ${off ? "off" : ""}"><span class="none">—</span></td>`;
+    } else {
+      const tradeable = canTrade(q) && !off;
+      const attrs = tradeable
+        ? ` data-gi="${gi}" data-book="${q.book}" data-team="${encodeURIComponent(team)}"`
+        : "";
+      // Instant buy is armed only on the BEST price for that side — buying a
+      // worse price than one showing on screen makes no sense.
+      const plan = (tradeable && isBest && instantArmed())
+        ? quickPlan(game, q) : null;
+      const quick = plan ? qbtnHtml(gi, q, team, plan) : "";
+      html += `<td class="cellq ${off ? "off" : ""} ${isBest ? "best" : ""} ${tradeable ? "tradeable" : ""} ${plan ? "quick" : ""}"
+        title="${q.detail || ""}${tradeable ? " — click to trade" : ""}"${attrs}>
+        ${tradeable ? '<span class="buytag">BUY</span>' : ""}${quick}
+        <div class="odds">${eAmerican(q)}${boostedNow(q) ? '<span class="boosted" title="your boost is applied to this leg">▲</span>' : ""}</div>
+        <div class="prob">${(eProb(q) * 100).toFixed(1)}%</div></td>`;
+    }
+  }
+  html += best
+    ? `<td class="cellbest"><div class="odds">${eAmerican(best)}</div><div class="bookname">${bookLabel(best.book)}</div></td>`
+    : `<td class="cellbest"><span class="none">—</span></td>`;
+  return html;
+}
+
+function renderTable(preserveOrder) {
+  const wrap = document.getElementById("tableWrap");
+  const summary = document.getElementById("summary");
+  if (!data || !data.games) {
+    summary.textContent = "";
+    wrap.innerHTML = `<div id="empty">No data yet — hit <b>Refresh</b> to pull odds.<br>
+      <small>(each scan uses 1 Odds API credit per sport)</small></div>`;
+    return;
+  }
+  const now = Date.now();
+  const isLive = g => new Date(g.start).getTime() <= now;
+  const visible = data.games.filter(g =>
+    (includeLive || !isLive(g)) &&
+    (!sportsOn || sportsOn.has(g.sport || "mlb")));
+  // Only games hidden BY THE LIVE FILTER, and only in the sport on screen.
+  // Subtracting the visible count from the whole board counted every other
+  // sport as "live hidden" (126 games, 20 on screen -> "106 live hidden").
+  const hiddenLive = data.games.filter(g =>
+    (!sportsOn || sportsOn.has(g.sport || "mlb")) && isLive(g) && !includeLive).length;
+
+  visible.forEach(applyBoostPlan);   // one boosted leg per book, per game
+  const analyzed = visible.map(g => ({ g, a: analyze(g), live: isLive(g) }));
+  // Rank by combined price, cheapest (best) first, with a deterministic
+  // tiebreak. Without the tiebreak two games on the same number could swap
+  // places every tick for no reason a reader could see.
+  const rank = (x, y) => (x.a ? x.a.sum : 9) - (y.a ? y.a.sum : 9)
+    || new Date(x.g.start) - new Date(y.g.start)
+    || (gameKey(x.g) < gameKey(y.g) ? -1 : 1);
+  if (preserveOrder && sortedGames.length) {
+    // Hold the order you are aiming at. Keyed by gameKey, NOT by object
+    // identity: a scan swaps every game object, so an identity map missed
+    // every row, collapsed all the sort keys to one value, and dropped the
+    // board back into the server's start-time order — which looked exactly
+    // like the best game being sent to the bottom the moment you hovered.
+    const pos = new Map(sortedGames.map((g, i) => [gameKey(g), i]));
+    analyzed.sort((x, y) => {
+      const a = pos.get(gameKey(x.g)), b = pos.get(gameKey(y.g));
+      if (a === undefined && b === undefined) return rank(x, y);
+      if (a === undefined) return 1;      // new arrivals go to the end
+      if (b === undefined) return -1;
+      return a - b;
+    });
+  } else {
+    analyzed.sort(rank);
+  }
+  sortedGames = analyzed.map(x => x.g);
+
+  const arbs = analyzed.filter(x => x.a && x.a.sum < 1);
+  const top = analyzed.length ? analyzed[0].a : null;
+  const bestTxt = !top ? "—"
+    : top.sum < 1 ? `best <b>+${top.roi.toFixed(2)}% ROI</b>`
+                  : `best vig <b>${((top.sum - 1) * 100).toFixed(2)}%</b>`;
+  summary.innerHTML = `<b>${analyzed.length}</b> games · <b>${arbs.length}</b> arbitrage · ` +
+    bestTxt + ` · ${selected.size
+      ? BOOKS.filter(b => selected.has(b.key)).map(b => b.label).join(", ")
+      : "<b>no books on</b> — tap one to compare"}` +
+    (anchorBook ? ` · <b class="pinned-note">one leg must be ${bookLabel(anchorBook)}</b>` : "") +
+    (hiddenLive ? ` · <b>${hiddenLive}</b> live hidden` : "");
+
+  let rows = "";
+  analyzed.forEach(({ g, a, live }, gi) => {
+    const isArb = a && a.sum < 1;
+    const sumCell = a
+      ? `<td class="sumcell" rowspan="2">
+           <div class="sumv">${isArb ? "+" + a.roi.toFixed(2) + "%" : ((a.sum - 1) * 100).toFixed(2) + "%"}</div>
+           <div class="roi">${isArb ? "ROI" : "vig"}</div>
+           <span class="placebtn" data-hgi="${gi}">Place order</span></td>`
+      : `<td class="sumcell" rowspan="2"><span class="none">—</span></td>`;
+    rows += `<tr class="game-top ${isArb ? "arb" : ""}">
+      <td class="gameinfo" rowspan="2">
+        <div class="matchup">${g.title || `${g.away} ${g.sep || "@"} ${g.home}`}${isArb ? '<span class="arbtag">ARB</span>' : ""}${live ? '<span class="livetag">LIVE</span>' : ""}</div>
+        <div class="starttime">${g.matchup ? g.matchup + " · " : ""}${fmtTime(g.start)}</div></td>
+      <td class="teamname">${g.away}</td>${sideCells(g, gi, g.away, a ? a.ba : undefined)}${sumCell}</tr>`;
+    rows += `<tr class="${isArb ? "arb" : ""}">
+      <td class="teamname">${g.home}</td>${sideCells(g, gi, g.home, a ? a.bh : undefined)}</tr>`;
+  });
+  // Nine book columns scroll horizontally, and the table is rebuilt every
+  // tick — without this, any sideways scroll snapped back to the left once a
+  // second and the right-hand books were impossible to look at.
+  const keepScroll = (wrap.querySelector(".tablescroll") || {}).scrollLeft || 0;
+  wrap.innerHTML = `<div class="tablescroll"><table>
+    <thead><tr><th class="stickygame">Game</th><th class="stickyteam">Team</th>
+      ${BOOKS.map(b => `<th class="num${boostHeadClass(b)}"` +
+        (boostable(b.key) ? ` onclick="editBoost('${b.key}', this)"
+           title="${boostOf(b.key)
+             ? `${b.label} is boosted +${boostOf(b.key)}% — click to remove it`
+             : `Click to set a profit boost for ${b.label}`}"` : "") +
+        `>${boostHeadHtml(b)}</th>`).join("")}
+      <th class="num stickybest">Best</th>
+      <th class="num stickyvig">Vig</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+
+  const scroller = wrap.querySelector(".tablescroll");
+  if (scroller && keepScroll) scroller.scrollLeft = keepScroll;
+  // pin the team column exactly where the game column actually ends
+  const gameCell = wrap.querySelector("th.stickygame");
+  if (gameCell) wrap.style.setProperty("--gamew", gameCell.offsetWidth + "px");
+
+  wrap.querySelectorAll("td.tradeable").forEach(td => td.onclick = () => {
+    const g = sortedGames[+td.dataset.gi];
+    const q = quoteFor(g, td.dataset.book, decodeURIComponent(td.dataset.team));
+    if (g && q) openModal(g, q);
+  });
+  wrap.querySelectorAll(".placebtn").forEach(el => el.onclick = () => {
+    openHedge(sortedGames[+el.dataset.hgi]);
+  });
+}
+
+/* Time to the next tick, not the time of the last one.
+
+   "Last scan: 4:02 PM" was useful when a scan only happened when you pressed
+   a button. On a shared clock it is always "a second ago", which tells you
+   nothing; what you actually want to know before clicking a price is how long
+   the number in front of you has left. Both halves of the board ride the same
+   tick, so one countdown covers the sportsbooks AND the exchanges. */
+function renderCountdown() {
+  const el = document.getElementById("nextTick");
+  if (!el) return;
+  const period = tickPeriodNow();
+  const left = (nextTickAt - Date.now()) / 1000;
+  // A tick that is in flight, or one already overdue, has no time left to
+  // count. Saying so beats a counter pinned at 0.0s, which is what it looked
+  // like on the 1s tier — the round trip alone eats most of that second, so
+  // the honest reading really is "fetching right now" nearly all the time.
+  const html = (tickInFlight || left <= 0.05)
+    ? `<b>updating…</b>`
+    // tenths only on the fast tier, where whole seconds would just blink 1/0
+    : `update in <b>${period <= 2000 ? left.toFixed(1) : String(Math.ceil(left))}s</b>`;
+  if (html !== lastCountdownHtml) { el.innerHTML = html; lastCountdownHtml = html; }
+}
+
+function renderMeta() { renderCountdown(); }
+
+function renderTradingBar() {
+  const parts = [];
+  const problems = [];
+  for (const v of ["kalshi", "polymarket_us"]) {
+    const s = trading[v] || {};
+    const name = VENUE_LABEL[v] || v;
+    if (s.configured) {
+      parts.push(`<span class="venue"><b>${name}</b>
+        <span class="ok">● $${(s.balance ?? 0).toFixed(2)}</span></span>`);
+      if (s.warning) problems.push(
+        `<b>${name}:</b> ${esc(s.warning)}` +
+        (v === "kalshi" ? shardFixHtml(s) : ""));
+    } else {
+      parts.push(`<span class="venue"><b>${name}</b>
+        <span class="bad">● not connected</span></span>`);
+      if (s.error) problems.push(`<b>${name}:</b> ${esc(s.error)}`);
+    }
+  }
+  document.getElementById("tradingBar").innerHTML =
+    "Trading: " + parts.join(" &nbsp; ") +
+    ` <button class="recheckbtn" onclick="loadTradingStatus(this)">recheck</button>` +
+    (problems.length
+      ? `<div class="tradingerr">${problems.join("<br>")}</div>`
+      : "");
+}
+
+function shardFixHtml(s) {
+  const avail = (s.shards && s.shards[0]) || 0;
+  return `<div class="shardfix">
+    Move <input id="shardAmt" type="number" min="0.01" step="0.01"
+      value="${avail.toFixed(2)}"> of your $${avail.toFixed(2)} on shard 0
+    <button class="recheckbtn" onclick="moveToSportsShard(this)">
+      transfer to shard 3</button>
+    <span class="shardnote">(your funds, your call — this moves collateral
+    inside your own Kalshi account)</span></div>`;
+}
+
+async function moveToSportsShard(btn) {
+  const amt = parseFloat(document.getElementById("shardAmt").value);
+  if (!(amt > 0)) return;
+  btn.disabled = true; btn.textContent = "moving…";
+  try {
+    const r = await fetch("/api/kalshi/transfer", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: amt, from_shard: 0, to_shard: 3 }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    btn.textContent = `moved $${j.moved}`;
+    setTimeout(loadTradingStatus, 1500);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = "transfer to shard 3";
+    alert("Transfer failed: " + e.message);
+  }
+}
+
+function esc(t) {
+  return String(t).replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+/* ---------------- 1+ home runs ----------------
+   A "1+ HR" prop is a two-outcome market, so the server hands it back in the
+   SAME game shape as a moneyline and everything below renders it with the
+   ordinary table, order ticket and hedge calculator. The only differences are
+   the book columns (a book that posts the market, plus both exchanges) and
+   that instant buy is switched off — this is not a live-trading view. */
+let propData = null, propQuota = null, propView = false, mlData = null;
+
+function booksForProps() {
+  const seen = (propQuota && propQuota.books_seen) || [];
+  return seen.map(k => ({ key: k, label: bookLabel(k) }))
+    .concat([{ key: "kalshi", label: "Kalshi" },
+             { key: "polymarket_us", label: "Polymarket" }]);
+}
+
+async function scanProps(btn) {
+  btn.disabled = true;
+  const was = btn.textContent;
+  btn.textContent = "Scanning…";
+  try {
+    const r = await fetch("/api/scan_props", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        max_events: parseInt(document.getElementById("propGames").value) || 5,
+      }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    propData = j; propQuota = j.quota;
+    if (propView) applyView();
+  } catch (e) {
+    toast("HR prop scan failed: " + e.message, "err");
+  } finally {
+    btn.disabled = false; btn.textContent = was;
+  }
+}
+
+/* ---------------- navigation ----------------
+   Two levels: a sport picks the family, a subcategory picks the market within
+   it. Everything downstream reads the resolved selection, so adding a market
+   is a line here rather than another special case in the render path. */
+const NAV = [
+  { key: "baseball", label: "Baseball", subs: [
+      { key: "moneyline", label: "Moneyline", sport: "mlb" },
+      { key: "hr",        label: "1+ HR",     props: true },
+  ]},
+  { key: "football", label: "Football", subs: [
+      { key: "nfl",   label: "NFL",   sport: "nfl" },
+      { key: "ncaaf", label: "NCAAF", sport: "ncaaf" },
+  ]},
+  { key: "basketball", label: "Basketball", subs: [
+      { key: "nba", label: "NBA", sport: "nba" },
+      { key: "cbb", label: "CBB", sport: "cbb" },
+  ]},
+  { key: "tennis", label: "Tennis", subs: [
+      { key: "atp", label: "ATP", sport: "atp" },
+      { key: "wta", label: "WTA", sport: "wta" },
+  ]},
+];
+let navSport = "baseball", navSub = "moneyline";
+
+function navGroup() { return NAV.find(n => n.key === navSport) || NAV[0]; }
+function navCurrent() {
+  const g = navGroup();
+  return g.subs.find(s => s.key === navSub) || g.subs[0];
+}
+
+function renderNav() {
+  buildWheel();
+  document.getElementById("navSubs").innerHTML = navGroup().subs.map(sb =>
+    `<span class="nsub ${sb.key === navSub ? "on" : ""}"
+       onclick="selectSub('${sb.key}')">${sb.label}</span>`).join("");
+}
+
+/* ---------------- the sport wheel ----------------
+
+   A wheel, not a scrolling row: the MIDDLE slot is the current sport, and you
+   change sport by moving the wheel under it — drag it, use the arrows, or
+   click a slot to bring it round to the middle.
+
+   Endless in both directions, done the standard way: the sport list is laid
+   out COPIES times and the offset is kept modulo one copy's width. Because the
+   pattern repeats exactly, normalising the offset is visually undetectable,
+   and there is always more than a screenful of track on either side, so you
+   can keep turning forever without hitting an end.
+
+   The highlight follows your finger, but the SPORT ONLY CHANGES when the wheel
+   settles. Switching live would fire a scan for every pixel dragged. */
+const WHEEL_COPIES = 5;
+const WHEEL_PAD = 2;              // copies parked to the left of the viewport
+let wheelOffset = 0;              // px into the list, always in [0, copyWidth)
+
+function wheelTabW() {
+  const el = document.getElementById("navSports");
+  const v = parseFloat(getComputedStyle(el).getPropertyValue("--tabw"));
+  return v || 98;
+}
+function wheelCopyW() { return NAV.length * wheelTabW(); }
+function wheelNorm(o) { const w = wheelCopyW(); return ((o % w) + w) % w; }
+function wheelSlot() { return Math.round(wheelOffset / wheelTabW()) % NAV.length; }
+
+function buildWheel() {
+  const track = document.getElementById("navTrack");
+  if (!track) return;
+  if (track.childElementCount !== NAV.length * WHEEL_COPIES) {
+    let html = "";
+    for (let c = 0; c < WHEEL_COPIES; c++)
+      html += NAV.map((n, i) =>
+        `<span class="ntab" data-sport="${n.key}" data-slot="${i}">${n.label}</span>`).join("");
+    track.innerHTML = html;
+    for (const t of track.children)
+      t.onclick = () => { if (!wheelDragged) turnWheelTo(+t.dataset.slot); };
+  }
+  // land the wheel on whatever sport is current (first paint, or a change made
+  // from somewhere other than the wheel)
+  const want = NAV.findIndex(n => n.key === navSport);
+  if (want >= 0 && wheelSlot() !== want) wheelOffset = want * wheelTabW();
+  placeWheel(false);
+}
+
+function placeWheel(animate) {
+  const track = document.getElementById("navTrack");
+  if (!track) return;
+  track.style.transition = animate ? "transform .2s cubic-bezier(.22,.61,.36,1)" : "none";
+  // Shifted one slot right so the selection sits in the MIDDLE of the three
+  // visible slots, with the previous sport to its left and the next to its
+  // right — a wheel you read around the current position rather than off the
+  // front of it.
+  track.style.transform =
+    `translate3d(${-(wheelOffset + WHEEL_PAD * wheelCopyW() - wheelTabW())}px, 0, 0)`;
+  // The slot in the middle is the selection. Its index in the track is exact,
+  // so there is nothing to measure.
+  const lead = WHEEL_PAD * NAV.length + wheelSlot();
+  const kids = track.children;
+  for (let i = 0; i < kids.length; i++) kids[i].classList.toggle("on", i === lead);
+}
+
+/* Settle on the nearest slot and, if that is a different sport, switch to it. */
+function settleWheel() {
+  const tw = wheelTabW();
+  wheelOffset = wheelNorm(Math.round(wheelOffset / tw) * tw);
+  placeWheel(true);
+  const key = NAV[wheelSlot()].key;
+  if (key !== navSport) {
+    navSport = key;
+    navSub = navGroup().subs[0].key;   // land on the family's first market
+    applyNav();
+  }
+}
+
+function turnWheel(steps) {
+  wheelOffset = wheelNorm(wheelOffset + steps * wheelTabW());
+  placeWheel(true);
+  settleWheel();
+}
+
+/* Bring a clicked slot round to the middle, the short way. */
+function turnWheelTo(slot) {
+  const n = NAV.length;
+  let diff = (slot - wheelSlot() + n) % n;
+  if (diff > n / 2) diff -= n;
+  if (diff) turnWheel(diff);
+}
+
+let wheelDragged = false;
+
+function wireWheel() {
+  const view = document.getElementById("navSports");
+  document.getElementById("sportPrev").onclick = () => turnWheel(-1);
+  document.getElementById("sportNext").onclick = () => turnWheel(1);
+
+  let from = null, startOffset = 0;
+  view.addEventListener("pointerdown", e => {
+    from = e.clientX; startOffset = wheelOffset; wheelDragged = false;
+    view.classList.add("grabbing");
+  });
+  window.addEventListener("pointermove", e => {
+    if (from === null) return;
+    const dx = e.clientX - from;
+    // A press only becomes a turn after a few pixels, so a plain click still
+    // reaches the slot underneath.
+    if (!wheelDragged && Math.abs(dx) < 4) return;
+    wheelDragged = true;
+    e.preventDefault();
+    wheelOffset = wheelNorm(startOffset - dx);
+    placeWheel(false);          // highlight tracks the drag; sport does not
+  });
+  window.addEventListener("pointerup", () => {
+    if (from === null) return;
+    from = null;
+    view.classList.remove("grabbing");
+    if (wheelDragged) settleWheel();
+    // let the click handler see the flag, then clear it
+    setTimeout(() => { wheelDragged = false; }, 0);
+  });
+  // trackpad / shift-wheel turns it too
+  view.addEventListener("wheel", e => {
+    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (!d) return;
+    e.preventDefault();
+    turnWheel(d > 0 ? 1 : -1);
+  }, { passive: false });
+}
+
+function selectSport(key) {
+  if (key === navSport) return;
+  const slot = NAV.findIndex(n => n.key === key);
+  if (slot >= 0) { turnWheelTo(slot); return; }   // the wheel drives the change
+  navSport = key;
+  navSub = navGroup().subs[0].key;      // land on the family's first market
+  applyNav();
+}
+
+function selectSub(key) {
+  if (key === navSub) return;
+  navSub = key;
+  applyNav();
+}
+
+/* Point the shared state at whatever the nav now selects. */
+function applyNav() {
+  const sub = navCurrent();
+  const wasProps = propView;
+  propView = !!sub.props;
+  if (propView !== wasProps) {
+    // a promo belongs to one market, so it doesn't follow you across tabs
+    boosts = {};
+    try { localStorage.removeItem("boosts"); } catch (e) {}
+  }
+  anchorBook = null;   // and neither does a pinned book
+  // one sport on screen at a time, which also scopes the live poll
+  sportsOn = sub.sport ? new Set([sub.sport]) : null;
+  renderNav();
+  applyView();
+}
+
+/* Point the shared state at whichever dataset the current view uses, rebuild
+   the book columns to match, then render with the normal renderer. */
+function applyView() {
+  document.getElementById("propScanBtn").hidden = !propView;
+  document.getElementById("propGamesBox").hidden = !propView;
+  // Refresh is the manual all-sports pull. With live games on screen the board
+  // is already re-scanning the visible sport every second, so the button is
+  // noise there — it comes back the moment live games are off.
+  document.getElementById("scanBtn").hidden = propView || includeLive;
+  // The continuous scan is a moneyline feature: HR props bill per GAME, so
+  // running it here would cost dozens of credits a second. autoBeat() sends
+  // the current sport, and sends nothing at all in the props view.
+  autoBeat();
+  document.getElementById("liveChip").hidden = propView;
+  document.getElementById("instantFlag").hidden = propView;
+  document.getElementById("safetyChip").hidden = propView;
+  document.getElementById("autoBox").hidden = propView ? true : !includeLive;
+  if (propView && !propData) {
+    document.getElementById("tableWrap").innerHTML =
+      `<div id="empty">1+ home run props aren't loaded.<br>
+       <small>Hit <b>Scan HR props</b> — <b>1 Odds API credit per game</b>;
+       games scanned in the last few minutes are reused free.</small></div>`;
+    document.getElementById("summary").textContent = "";
+    return;
+  }
+  if (propView) {
+    BOOKS = booksForProps();
+    selected = new Set(BOOKS.map(b => b.key));
+    data = propData;
+  } else {
+    // back to moneylines: restore the row you arranged, not the default one
+    BOOKS = mlBooks();
+    loadBookLayout();
+    BOOKS = mlBooks();
+    data = mlData;
+  }
+  sortedGames = [];
+  renderChips();
+  renderMeta();
+  renderTable();
+  tickNow();     // the new market's prices now, not up to 10s from now
+  if (propView && propQuota) {
+    const q = propQuota, seen = q.books_seen || [];
+    document.getElementById("summary").innerHTML +=
+      ` · ${q.events_scanned} games · <b>${q.credits_spent}</b> credit` +
+      `${q.credits_spent === 1 ? "" : "s"}` +
+      (q.cached_games ? `, ${q.cached_games} reused free` : "") +
+      ` · top ${q.top_per_game}/game` +
+      (seen.length && !seen.some(b => b === "draftkings" || b === "fanduel")
+        ? ` <span class="hint">(DK/FanDuel not posting 1+ HR)</span>` : "");
+  }
+}
+
+
+/* ---------------- quickbuy (live mode) ----------------
+   One click places a real limit order. Armed only while live mode is on, only
+   on a connected exchange, and only from the small bolt button — an ordinary
+   click on the cell still opens the normal ticket, so browsing the board
+   cannot fire an order. */
+
+/* Age of the price we are about to trade on. The exchange poll stamps
+   lastFeedAt every second; if that is recent the server can skip its own
+   pre-flight book read, which is one whole network round trip off the click. */
+function refAgeMs() {
+  if (!lastFeedAt) return null;
+  return Math.max(0, Date.now() - new Date(lastFeedAt).getTime());
+}
+
+function orderBody(q, contracts) {
+  const body = { venue: q.book, price: q.meta.ask, contracts: contracts,
+                 ref_price: q.meta.ask, ref_age_ms: refAgeMs() };
+  if (q.book === "kalshi") {
+    body.ticker = q.meta.ticker;
+    body.exchange_index = q.meta.exchange_index != null ? q.meta.exchange_index : -1;
+    if (q.meta.buy_no) body.buy_no = true;      // the No side of a prop
+  } else {
+    body.market_slug = q.meta.market_slug;
+    body.long = q.meta.long !== false;
+  }
+  return body;
+}
+
+/* Safety is a catch on instant buy, not a sizing mode.
+     Safety On  -> instant buy is DISARMED; cells open the normal ticket.
+     Safety Off -> instant buy is ARMED; one click sends a real order.
+   Instant buy always sizes as a hedge: the auto amount is treated as a stake
+   already placed on the other side, and the count is computed from a freshly
+   read sportsbook line at click time. */
+function instantArmed() {
+  // never in the HR view — that view is not for live trading
+  return !propView && includeLive && !safetyOn && autoAmount() > 0;
+}
+
+function renderInstantFlag() {
+  const el = document.getElementById("instantFlag");
+  if (!el) return;
+  // Just the armed state — the reason it is off is already visible next to it
+  // (the Safety chip, or an empty amount box).
+  const armed = instantArmed();
+  el.textContent = armed ? "⚡ INSTANT BUY ON" : "INSTANT BUY OFF";
+  el.classList.toggle("armedoff", !armed);
+  const lbl = document.getElementById("safetyLabel");
+  if (lbl) lbl.textContent = safetyOn ? "Safety On" : "Safety Off";
+}
+
+function autoAmount() {
+  const el = document.getElementById("autoAmt");
+  const v = el ? parseFloat(el.value) : NaN;
+  return v > 0 ? v : 0;
+}
+
+function bestSportsbookQuote(game, team) {
+  let best = null;
+  for (const q of game.quotes)
+    if (!EXCHANGES.has(q.book) && q.team === team && selected.has(q.book) &&
+        (!best || eProb(q) < eProb(best))) best = q;
+  return best;
+}
+
+/* What a quickbuy on this quote would do, or null if it cannot be sized. */
+function quickPlan(game, q) {
+  const amt = autoAmount();
+  if (!amt || !canTrade(q)) return null;
+  // The amount is assumed already staked on the OTHER side at the
+  // best sportsbook price, so size this leg for equal profit either way.
+  const other = q.team === game.home ? game.away : game.home;
+  const bk = bestSportsbookQuote(game, other);
+  if (!bk) return null;
+  const n = roundContracts(q, amt / eProb(bk));   // contracts == payout
+  return { contracts: n, cost: n * q.meta.ask, hedgeOf: bk,
+           why: "hedges $" + amt.toFixed(2) + " on " + other + " at " +
+                eAmerican(bk) + " (" + bookLabel(bk.book) + ") - pays $" +
+                n.toFixed(2) + " either way" };
+}
+
+/* Fill confirmation.
+   - Filled on placement  -> green, instantly, no polling.
+   - Anything else        -> a pending toast that RESOLVES WITHIN 5s by asking
+                             the venue directly, so an unhedged leg can never
+                             sit behind a vague "submitted".
+   Confirming is idempotent and cheap (no Odds API credits). */
+const CONFIRM_DEADLINE_MS = 5000;   // the verdict is rendered BEFORE this
+const CONFIRM_FIRST_MS = 200;       // first check quickly, to catch fast fills
+const CONFIRM_EVERY_MS = 350;
+const CONFIRM_ROUNDTRIP_MS = 700;   // reserve time for the last check to land
+
+function setToast(el, msg, kind) {
+  el.className = "toastmsg " + (kind || "");
+  el.textContent = msg;
+  clearTimeout(el._t);
+  el._t = setTimeout(function () { el.remove(); },
+                     kind === "ok" ? 7000 : kind === "warn" ? 20000 : 30000);
+}
+
+function sizedLines(sized) {
+  const out = [];
+  if (sized && sized.american)
+    out.push("sized against " + sized.american + " on " + bookLabel(sized.book) +
+             " read " + (sized.quote_age_s || 0) + "s ago");
+  if (sized && sized.note) out.push(sized.note);
+  return out;
+}
+
+async function confirmFill(venue, venueLabel, j, sized, requested) {
+  const base = [venueLabel + " · " + (j.detail || "")].concat(sizedLines(sized));
+  if (j.order_id) base.push("order " + String(j.order_id).slice(0, 14));
+
+  // already proven filled by the placement response -> instant green
+  if (classifyFill(j.status, j.detail) === "filled") {
+    toast(["✅ ORDER FILLED"].concat(base).join("\n"), "ok");
+    return "filled";
+  }
+
+  const el = document.createElement("div");
+  document.getElementById("toast").appendChild(el);
+  setToast(el, ["⏳ CONFIRMING FILL…"].concat(base).join("\n"), "warn");
+
+  if (!j.order_id) {                       // nothing to confirm against
+    setToast(el, ["❓ ORDER SENT — no order id returned, check the venue"]
+             .concat(base).join("\n"), "warn");
+    return "unknown";
+  }
+
+  const deadline = Date.now() + CONFIRM_DEADLINE_MS;
+  let st = null, first = true;
+  while (true) {
+    // stop starting checks once there isn't room for one to come back, so the
+    // final verdict is always on screen inside the deadline
+    const left = deadline - Date.now();
+    if (left <= CONFIRM_ROUNDTRIP_MS) break;
+    const wait = Math.min(first ? CONFIRM_FIRST_MS : CONFIRM_EVERY_MS,
+                          left - CONFIRM_ROUNDTRIP_MS);
+    first = false;
+    await new Promise(r => setTimeout(r, Math.max(0, wait)));
+    try {
+      const r = await fetch("/api/order_status", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ venue: venue, order_id: j.order_id,
+                               requested: requested }),
+      });
+      const s = await r.json();
+      if (!r.ok) throw new Error(s.error || r.statusText);
+      st = s;
+      const want = requested || s.requested || 0;
+      if (s.filled > 0 && want && s.filled >= want - 1e-9) {
+        setToast(el, [`✅ ORDER FILLED — ${s.filled} contracts`]
+                 .concat(base).join("\n"), "ok");
+        return "filled";
+      }
+      if (s.terminal) break;
+    } catch (e) { /* keep trying until the deadline */ }
+  }
+
+  const filled = st ? st.filled : 0;
+  const want = requested || (st && st.requested) || 0;
+  if (filled > 0 && want && filled >= want - 1e-9) {
+    setToast(el, [`✅ ORDER FILLED — ${filled} contracts`]
+             .concat(base).join("\n"), "ok");
+    return "filled";
+  }
+  if (filled > 0) {
+    setToast(el, [`⚠️ PARTIAL — filled ${filled} of ${want}; you are short `
+      + `${(want - filled).toFixed(0)} contracts of cover`]
+      .concat(base).join("\n"), "warn");
+    return "partial";
+  }
+  setToast(el, [`❌ NOT FILLED — ${want || "the"} contracts still working after `
+    + `${(CONFIRM_DEADLINE_MS / 1000).toFixed(0)}s of checks; YOU ARE UNHEDGED`]
+    .concat(base).join("\n"), "err");
+  return "resting";
+}
+
+/* Order feedback. A resting order is NOT a success: the hedge did not go on,
+   so it must not look green. Four outcomes, coloured accordingly. */
+function classifyFill(status, detail) {
+  const t = ((status || "") + " " + (detail || "")).toUpperCase();
+  if (t.includes("PARTIAL")) return "partial";
+  if (t.includes("NOT FILLED") || t.includes("RESTING")) return "resting";
+  if (t.includes("FILLED")) return "filled";
+  return "unknown";
+}
+
+function orderToast(venueLabel, j, sized) {
+  const kind = classifyFill(j.status, j.detail);
+  const head = {
+    filled:  "✅ ORDER FILLED",
+    partial: "⚠️ PARTIALLY FILLED — you are still short cover",
+    resting: "❌ NOT FILLED — order is resting, you are UNHEDGED",
+    unknown: "❓ ORDER SENT — fill not confirmed, check the venue",
+  }[kind];
+  const tone = { filled: "ok", partial: "warn", resting: "err", unknown: "warn" }[kind];
+  const lines = [head, venueLabel + " · " + (j.status || "submitted")];
+  if (j.detail) lines.push(j.detail);
+  if (sized && sized.american)
+    lines.push("sized against " + sized.american + " on " +
+               bookLabel(sized.book) + " read " + (sized.quote_age_s || 0) + "s ago");
+  if (sized && sized.note) lines.push(sized.note);
+  if (j.order_id) lines.push("order " + String(j.order_id).slice(0, 14));
+  toast(lines.join("\n"), tone);
+  return kind;
+}
+
+function toast(msg, kind) {
+  const box = document.getElementById("toast");
+  const el = document.createElement("div");
+  el.className = "toastmsg " + (kind || "");
+  el.textContent = msg;
+  box.appendChild(el);
+  // bad news stays on screen much longer than good news
+  setTimeout(function () { el.remove(); },
+             kind === "ok" ? 7000 : kind === "warn" ? 20000 : 30000);
+}
+
+async function quickBuy(gi, book, teamEnc, btn) {
+  const team = decodeURIComponent(teamEnc);
+  const g = sortedGames[gi];
+  const q = g && quoteFor(g, book, team);
+  const plan = q && quickPlan(g, q);
+  if (!plan) { toast("Cannot size that quickbuy - check the auto amount.", "err"); return; }
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "...";
+
+  // With Safety On the hedge size depends on the sportsbook line, which is
+  // only as fresh as the last Refresh. The server re-reads that line now and
+  // sizes from the CURRENT price, so we send the inputs rather than a count.
+  const body = {
+    venue: q.book,
+    price: q.meta.ask,
+    ref_price: q.meta.ask,
+    ref_age_ms: refAgeMs(),
+    sport: g.sport || "mlb",
+    away: g.away,
+    home: g.home,
+    other_team: team === g.home ? g.away : g.home,
+    amount: autoAmount(),
+    safety: true,            // instant buy always sizes as a hedge
+    boost_pct: boostOf(bestSportsbookQuote(g, team === g.home ? g.away : g.home)
+                       ? bestSportsbookQuote(g, team === g.home ? g.away : g.home).book
+                       : ""),
+    fallback_contracts: plan.contracts,
+  };
+  if (q.book === "kalshi") {
+    body.ticker = q.meta.ticker;
+    body.exchange_index = q.meta.exchange_index != null ? q.meta.exchange_index : -1;
+  } else {
+    body.market_slug = q.meta.market_slug;
+    body.long = q.meta.long;
+  }
+
+  try {
+    const r = await fetch("/api/quick_trade", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    const sz = j.sized || {};
+    loadTradingStatus();
+    confirmFill(q.book, bookLabel(q.book), j, sz, j.contracts || sz.contracts);
+  } catch (e) {
+    toast("\u274c ORDER REJECTED \u2014 nothing was placed on " +
+          bookLabel(q.book) + "\n" + e.message, "err");
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
+/* ---------------- trade modal ---------------- */
+
+function openModal(game, q) {
+  modalCtx = { game, q };
+  document.getElementById("mVenue").textContent = bookLabel(q.book);
+  document.getElementById("mTeam").textContent = q.team;
+  document.getElementById("mGame").textContent =
+    `${game.away} @ ${game.home} · ${fmtTime(game.start)} · buy = win if ${q.team} wins`;
+  const price = q.meta.ask ?? eProb(q);
+  const step = q.book === "polymarket_us" ? 0.005 : 0.01;
+  const inp = document.getElementById("mPrice");
+  inp.step = step; inp.value = price.toFixed(step < 0.01 ? 3 : 2);
+  document.getElementById("mAskNote").textContent =
+    `— best ask ${(price * 100).toFixed(1)}¢ (buying at the ask)`;
+  document.getElementById("mBal").textContent =
+    "$" + (venueBalance(q.book, q) ?? 0).toFixed(2);
+  document.getElementById("mFeeRow").style.display =
+    VENUE_THETA[q.book] ? "flex" : "none";
+  document.getElementById("mFeeLabel").textContent =
+    `Est. ${VENUE_LABEL[q.book] || q.book} taker fee`;
+  const res = document.getElementById("tradeResult");
+  res.className = ""; res.textContent = "";
+  updateCalc();
+  document.getElementById("overlay").classList.add("open");
+}
+
+function closeModal() {
+  document.getElementById("overlay").classList.remove("open");
+  modalCtx = null;
+}
+
+function modalContracts() {
+  const raw = parseFloat(document.getElementById("mCount").value) || 0;
+  return roundContracts(modalCtx.q, raw);
+}
+
+function updateCalc() {
+  if (!modalCtx) return;
+  const p = parseFloat(document.getElementById("mPrice").value) || 0;
+  const raw = parseFloat(document.getElementById("mCount").value) || 0;
+  const n = modalContracts();          // whole contracts actually ordered
+  document.getElementById("mCountNote").textContent =
+    Math.abs(raw - n) > 1e-9 ? `→ rounds to ${n}` : "";
+  document.getElementById("mCost").textContent = "$" + (p * n).toFixed(2);
+  document.getElementById("mPayout").textContent = "$" + n.toFixed(2);
+  const theta = VENUE_THETA[modalCtx.q.book];
+  if (theta)
+    document.getElementById("mFee").textContent =
+      "$" + (theta * p * (1 - p) * n).toFixed(2);
+
+  // BBO size: the only price you can realistically expect to fill at
+  const depth = modalCtx.q.meta.depth;
+  const dEl = document.getElementById("mDepth");
+  dEl.textContent = depth ? depth.toLocaleString() + " contracts" : "unknown";
+  const warn = document.getElementById("mDepthWarn");
+  const priceMoved = Math.abs(p - (modalCtx.q.meta.ask ?? p)) > 1e-9;
+  if (depth && n > depth) {
+    warn.className = "show";
+    warn.textContent = `Only ${depth.toLocaleString()} contracts are resting at ` +
+      `${(modalCtx.q.meta.ask * 100).toFixed(1)}c. This is a limit order, so ` +
+      `${depth.toLocaleString()} would fill and the remaining ` +
+      `${(n - depth).toLocaleString()} would rest unfilled at your price.`;
+  } else if (priceMoved && p > modalCtx.q.meta.ask) {
+    warn.className = "show";
+    warn.textContent = `You are bidding above the best ask ` +
+      `(${(modalCtx.q.meta.ask * 100).toFixed(1)}c) — you will not fill better ` +
+      `than the top of book.`;
+  } else {
+    warn.className = "";
+    warn.textContent = "";
+  }
+}
+document.getElementById("mPrice").oninput = updateCalc;
+document.getElementById("mCount").oninput = updateCalc;
+document.getElementById("mCount").onchange = () => {
+  if (!modalCtx) return;
+  document.getElementById("mCount").value = modalContracts();
+  updateCalc();
+};
+document.getElementById("overlay").onclick = e => {
+  if (e.target.id === "overlay") closeModal();
+};
+
+async function submitTrade() {
+  if (!modalCtx) return;
+  const { q } = modalCtx;
+  const btn = document.getElementById("buyBtn");
+  const res = document.getElementById("tradeResult");
+  const body = orderBody(q, modalContracts());
+  // a hand-edited limit price overrides the reference fast path
+  const typed = parseFloat(document.getElementById("mPrice").value);
+  body.price = typed;
+  if (Math.abs(typed - q.meta.ask) > 1e-9) { body.ref_price = null; body.ref_age_ms = null; }
+  btn.disabled = true; btn.textContent = "Placing…";
+  res.className = ""; res.textContent = "";
+  try {
+    const r = await fetch("/api/trade", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    loadTradingStatus();  // refresh balances
+    // Every order path confirms with the venue rather than assuming: instant
+    // when the placement proves a fill, otherwise resolved inside 5s.
+    res.className = "";
+    res.textContent = "confirming fill…";
+    const kind = await confirmFill(q.book, bookLabel(q.book), j, null,
+                                   modalContracts());
+    res.className = kind === "filled" ? "ok" : "err";
+    res.textContent =
+      (kind === "filled" ? "FILLED" :
+       kind === "partial" ? "PARTIALLY FILLED — still short cover" :
+       kind === "resting" ? "NOT FILLED — resting, you are unhedged" :
+       "sent — fill unconfirmed") + ` · ${j.detail || ""}`;
+  } catch (e) {
+    res.className = "err";
+    res.textContent = "ORDER REJECTED — nothing was placed: " + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "Buy";
+  }
+}
+
+/* ---------------- hedge calculator ---------------- */
+
+let hedgeCtx = null;  // { game, legs: [{team, quotes, sel, stake}] }
+
+/* Locking a leg.
+
+   Sportsbook stakes usually have to look like something a person would bet, so
+   the exact size an even hedge calls for ($318.47) is not always usable. Lock
+   the leg you have actually placed and the other side stays free to type, with
+   the payout shown for each outcome rather than pretending the book is even. */
+function hedgeToggleLock(i) {
+  const leg = hedgeCtx.legs[i];
+  leg.locked = !leg.locked;
+  if (leg.locked) hedgeCtx.legs[1 - i].locked = false;   // at most one locked
+  renderHedgeLegs();
+}
+
+function lockedIndex() {
+  return hedgeCtx.legs.findIndex(l => l.locked);
+}
+
+function legQuote(leg) { return leg.quotes[leg.sel]; }
+
+function legContracts(leg) {
+  const q = legQuote(leg);
+  return roundContracts(q, leg.stake / eProb(q));  // contracts == payout ($1 each)
+}
+
+/* What this leg will ACTUALLY cost and pay, after whole-contract rounding.
+   Exchange legs: cost = contracts x effective price (fee included), payout =
+   contracts. Sportsbook legs take no rounding — the stake is a dollar bet. */
+function legFill(leg) {
+  const q = legQuote(leg);
+  if (legTradeable(leg) || (EXCHANGES.has(q.book) && q.meta)) {
+    const n = legContracts(leg);
+    return { contracts: n, cost: n * eProb(q), payout: n, rounded: true };
+  }
+  return { contracts: null, cost: leg.stake, payout: leg.stake / eProb(q),
+           rounded: false };
+}
+
+function openHedge(game) {
+  // Open on the pair the BOARD chose, not just the cheapest quote per side.
+  // Those are the same thing until a book is pinned — and then they are not:
+  // defaulting to cheapest would quietly drop the pin on the way into the
+  // calculator, which is exactly where it matters, since this is the screen
+  // that places the orders. Every quote is still listed, so any leg can be
+  // changed by hand afterwards.
+  const a = analyze(game);
+  const want = new Map(a ? [[game.away, a.ba], [game.home, a.bh]] : []);
+  const mkLeg = team => {
+    const quotes = game.quotes.filter(q => q.team === team)
+      .sort((a, b) => eProb(a) - eProb(b));
+    const i = quotes.indexOf(want.get(team));
+    return { team, quotes, sel: i >= 0 ? i : 0, stake: 0 };
+  };
+  const legs = [mkLeg(game.away), mkLeg(game.home)];
+  if (!legs[0].quotes.length || !legs[1].quotes.length) return;
+  hedgeCtx = { game, legs };
+  document.getElementById("hGame").textContent = game.title
+    ? `${game.title} · ${game.matchup || ""} · ${fmtTime(game.start)} · `
+      + `stakes split so profit is equal either way`
+    : `${game.away} ${game.sep || "@"} ${game.home} · ${fmtTime(game.start)} · `
+      + `stakes split so profit is equal either way`;
+  hedgeRecalc("total");
+  renderHedgeLegs();
+  document.getElementById("hedgeOverlay").style.display = "flex";
+  refreshDepthFor([game]);   // this game's size, fresh, regardless of rank
+}
+
+/* One-off depth pull for specific games (used when a ticket opens). */
+async function refreshDepthFor(games) {
+  const tickers = [], slugs = new Set();
+  for (const g of games) {
+    for (const q of g.quotes) {
+      if (!q.meta) continue;
+      if (q.book === "kalshi" && q.meta.ticker) tickers.push(q.meta.ticker);
+      if (q.book === "polymarket_us" && q.meta.market_slug)
+        slugs.add(q.meta.market_slug);
+    }
+  }
+  if (!tickers.length && !slugs.size) return;
+  try {
+    const r = await fetch("/api/depth", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kalshi_tickers: tickers,
+                             polymarket_slugs: [...slugs] }),
+    });
+    const j = await r.json();
+    if (r.ok) {
+      mergeDepth(games, j);
+      if (hedgeCtx) { refreshHedgeButtons(); updateHedgeTotals(); }
+    }
+  } catch (e) { /* prices still flowing; size stays as last measured */ }
+}
+
+function closeHedge() {
+  document.getElementById("hedgeOverlay").style.display = "none";
+  hedgeCtx = null;
+}
+document.getElementById("hedgeOverlay").onclick = e => {
+  if (e.target.id === "hedgeOverlay") closeHedge();
+};
+
+function hedgeRecalc(driver) {
+  const [A, B] = hedgeCtx.legs;
+  const pA = eProb(legQuote(A)), pB = eProb(legQuote(B));
+  const lock = lockedIndex();          // a fixed leg is never recomputed
+  if (driver === "total") {
+    const T = parseFloat(document.getElementById("hTotal").value) || 0;
+    if (lock === 0) B.stake = Math.max(0, T - A.stake);
+    else if (lock === 1) A.stake = Math.max(0, T - B.stake);
+    else { A.stake = T * pA / (pA + pB); B.stake = T * pB / (pA + pB); }
+  } else if (driver === "A") {
+    if (lock !== 1) B.stake = A.stake * pB / pA;
+  } else if (driver === "B") {
+    if (lock !== 0) A.stake = B.stake * pA / pB;
+  }
+}
+
+function legTradeable(leg) { return canTrade(legQuote(leg)); }
+
+const KALSHI_SPORTS_SHARD = 3;
+const HEDGE_SLIP_C = 5;   // mirrors config.HEDGE_MAX_SLIPPAGE_CENTS
+
+/* Kalshi holds collateral per matching shard, so the balance that matters is
+   the one on THIS market's shard — not the account total, and not a fixed
+   "sports" shard. There is no such thing: MLB and tennis are on shard 3 while
+   NFL, NCAAF and NBA are on 0. Pinning this to shard 3 showed the wrong
+   number, and the wrong money, on every football and basketball ticket. */
+function venueBalance(book, q) {
+  const t = trading[book] || {};
+  if (book === "kalshi" && t.shards) {
+    const idx = q && q.meta && q.meta.exchange_index != null
+      ? q.meta.exchange_index : KALSHI_SPORTS_SHARD;
+    if (idx < 0) return t.balance ?? null;    // unknown shard: show the total
+    return t.shards[idx] ?? t.shards[String(idx)] ?? 0;
+  }
+  return t.balance ?? null;
+}
+
+function legEcon(leg) {
+  /* Everything the single-order modal showed, for one leg. */
+  const q = legQuote(leg);
+  const f = legFill(leg);
+  const theta = VENUE_THETA[q.book] || 0;
+  const ask = q.meta ? q.meta.ask : eProb(q);
+  const n = f.contracts;
+  const notional = f.rounded ? n * ask : leg.stake;
+  const fee = f.rounded ? theta * ask * (1 - ask) * n : 0;
+  const limit = f.rounded ? Math.min(0.995, ask + 0.01) : null;  // +1c cross
+  return { q, f, ask, n, notional, fee, limit,
+           allIn: notional + fee, payout: f.payout,
+           depth: (q.meta || {}).depth || 0,
+           balance: venueBalance(q.book, q) };
+}
+
+function legStatsHtml(leg) {
+  const e = legEcon(leg);
+  if (!e.f.rounded) {                       // sportsbook leg: dollars, no book
+    return `<div class="legstats">
+      <span>stake <b>$${leg.stake.toFixed(2)}</b></span>
+      <span>pays <b>$${e.payout.toFixed(2)}</b></span>
+      <span class="statmuted">place this one yourself</span></div>`;
+  }
+  const bal = e.balance == null ? "—" : "$" + e.balance.toFixed(2);
+  const sweep = (e.q.meta || {}).sweep;
+  const fills = sweep == null ? "" :
+    `<span>fillable <b>${sweep.toLocaleString()}</b> within ${HEDGE_SLIP_C}¢</span>`;
+  return `<div class="legstats">
+    <span>cost <b>$${e.notional.toFixed(2)}</b></span>
+    <span>fee <b>$${e.fee.toFixed(2)}</b></span>
+    <span>pays <b>$${e.payout.toFixed(2)}</b></span>
+    <span>BBO <b>${(e.ask * 100).toFixed(1)}¢</b>${e.depth ? ` ×${e.depth.toLocaleString()}` : ""}</span>
+    ${fills}
+    <span>bal <b>${bal}</b></span></div>`;
+}
+
+function legWarnHtml(leg) {
+  const e = legEcon(leg);
+  if (!e.f.rounded) return "";
+  const w = [];
+  const sweep = (e.q.meta || {}).sweep;
+  if (sweep != null && e.n > sweep)
+    w.push(`<b>HEDGE WON'T FULLY FILL:</b> only ${sweep.toLocaleString()} of `
+      + `${e.n} contracts are available within ${HEDGE_SLIP_C}¢ — you would be `
+      + `left short ${(e.n - sweep).toLocaleString()} contracts of cover`);
+  else if (sweep == null && e.depth && e.n > e.depth)
+    w.push(`${e.depth.toLocaleString()} at the touch; deeper size unknown until `
+      + `this game's book is polled`);
+  if (e.balance != null && e.allIn > e.balance)
+    w.push(`costs $${e.allIn.toFixed(2)} but ${bookLabel(e.q.book)} holds $${e.balance.toFixed(2)}`);
+  return w.length ? `<div class="legwarn">${w.join("<br>")}</div>` : "";
+}
+
+function legQtyHtml(leg) {
+  const e = legEcon(leg);
+  return e.f.rounded
+    ? `<b>${e.n}</b> contracts`
+    : `<span class="statmuted">$${leg.stake.toFixed(2)} stake</span>`;
+}
+
+function legButtonLabel(leg) {
+  const e = legEcon(leg);
+  return `Buy ${e.n} @ ${(e.ask * 100).toFixed(1)}¢ · $${e.notional.toFixed(2)}`;
+}
+
+function legManualLabel(leg) {
+  const q = legQuote(leg);
+  return `bet $${leg.stake.toFixed(2)} at ${eAmerican(q)} on ${bookLabel(q.book)}`;
+}
+
+
+function legActionHtml(leg, i) {
+  const q = legQuote(leg);
+  if (legTradeable(leg)) {
+    return `<button class="legtradebtn" data-leg="${i}"
+      onclick="hedgeTradeLeg(${i}, this)">${legButtonLabel(leg)}</button>`;
+  }
+  if (EXCHANGES.has(q.book)) {
+    const why = !q.meta ? "run a fresh scan to enable trading"
+      : `${bookLabel(q.book)} not connected — see README for .env setup`;
+    return `<button class="legtradebtn" disabled title="${why}">
+      ${!q.meta ? "rescan needed" : "not connected"}</button>`;
+  }
+  let html = `<span class="legmanual" id="hManual${i}">${legManualLabel(leg)}</span>`;
+  let alt = null, altIdx = -1;
+  leg.quotes.forEach((oq, j) => {
+    if (canTrade(oq) && (!alt || eProb(oq) < eProb(alt))) { alt = oq; altIdx = j; }
+  });
+  if (alt) html += `<button class="legswitch"
+    onclick="hedgeSwitchTo(${i}, ${altIdx})"
+    title="Switch this leg to ${bookLabel(alt.book)} and recompute the hedge">
+    switch to ${bookLabel(alt.book)} ${eAmerican(alt)}</button>`;
+  return `<div class="legaction">${html}</div>`;
+}
+
+function hedgeSwitchTo(i, j) {
+  hedgeCtx.legs[i].sel = j;
+  hedgeRecalc("total");
+  renderHedgeLegs();
+}
+
+function renderHedgeLegs() {
+  const wrap = document.getElementById("hLegs");
+  wrap.innerHTML = hedgeCtx.legs.map((leg, i) => {
+    const q = legQuote(leg);
+    const opts = leg.quotes.map((oq, j) =>
+      `<option value="${j}" ${j === leg.sel ? "selected" : ""}>
+         ${bookLabel(oq.book)} ${eAmerican(oq)}</option>`).join("");
+    return `<div class="hleg">
+      <div class="toprow">
+        <span class="tname">${leg.team}</span>
+        <select data-leg="${i}" onchange="hedgeSelChange(${i}, this)">${opts}</select>
+      </div>
+      <div class="botrow">
+        <label class="stakebox">$<input id="hStake${i}" type="number" min="0" step="0.01"
+               value="${leg.stake.toFixed(2)}"
+               oninput="hedgeStakeChange(${i}, this)"></label>
+        <button class="lockbtn ${leg.locked ? "on" : ""}" onclick="hedgeToggleLock(${i})"
+          title="${leg.locked
+            ? "This stake is fixed — typing on the other side won't move it. Click to unlock."
+            : "Fix this stake, then set the other side freely to see the P&L of an uneven hedge."}"
+          >${leg.locked ? "🔒 fixed" : "🔓 fix"}</button>
+        <span class="legqty" id="hQty${i}">${legQtyHtml(leg)}</span>
+        ${legActionHtml(leg, i)}
+      </div>
+      <div id="hStats${i}">${legStatsHtml(leg)}</div>
+      <div id="hWarn${i}">${legWarnHtml(leg)}</div>
+      <div class="legresult" id="hLegRes${i}"></div>
+    </div>`;
+  }).join("");
+  updateHedgeTotals();
+}
+
+function updateHedgeTotals() {
+  const [A, B] = hedgeCtx.legs;
+  const fA = legFill(A), fB = legFill(B);
+  const cost = fA.cost + fB.cost;              // actual outlay after rounding
+  const pnlA = fA.payout - cost;               // this side wins, the other dies
+  const pnlB = fB.payout - cost;
+  const worst = Math.min(pnlA, pnlB);
+
+  document.getElementById("hTotal").value = (A.stake + B.stake).toFixed(2);
+  document.getElementById("hCost").textContent = "$" + cost.toFixed(2);
+
+  const money = v => (v >= 0 ? "+$" : "\u2212$") + Math.abs(v).toFixed(2);
+  const put = (id, lblId, v, team) => {
+    const el = document.getElementById(id);
+    el.textContent = money(v);
+    el.className = v >= 0 ? "pos" : "neg";
+    document.getElementById(lblId).textContent = "if " + team + " wins";
+  };
+  put("hPnlA", "hPnlALbl", pnlA, A.team);
+  put("hPnlB", "hPnlBLbl", pnlB, B.team);
+
+  const rEl = document.getElementById("hRoi");
+  rEl.textContent = (cost > 0 ? (worst / cost * 100).toFixed(2) : "0.00") + "%";
+  rEl.className = worst >= 0 ? "pos" : "neg";
+  document.getElementById("hRoiLbl").textContent =
+    Math.abs(pnlA - pnlB) < 0.005 ? "ROI either way" : "worst-case ROI";
+
+  document.getElementById("hedgeBothWrap").style.display =
+    (legTradeable(A) && legTradeable(B)) ? "block" : "none";
+}
+
+function hedgeSelChange(i, sel) {
+  hedgeCtx.legs[i].sel = +sel.value;
+  hedgeRecalc("total");
+  renderHedgeLegs();
+}
+
+function hedgeStakeChange(i, inp) {
+  hedgeCtx.legs[i].stake = parseFloat(inp.value) || 0;
+  hedgeRecalc(i === 0 ? "A" : "B");
+  const other = 1 - i;
+  const oInp = document.getElementById("hStake" + other);
+  if (oInp && !hedgeCtx.legs[other].locked)
+    oInp.value = hedgeCtx.legs[other].stake.toFixed(2);
+  refreshHedgeButtons();
+  updateHedgeTotals();
+}
+
+document.getElementById("hTotal").oninput = () => {
+  if (!hedgeCtx) return;
+  hedgeRecalc("total");
+  hedgeCtx.legs.forEach((leg, i) => {
+    const inp = document.getElementById("hStake" + i);
+    if (inp) inp.value = leg.stake.toFixed(2);
+  });
+  refreshHedgeButtons();
+  updateHedgeTotals();
+};
+
+function refreshHedgeButtons() {
+  hedgeCtx.legs.forEach((leg, i) => {
+    const qty = document.getElementById("hQty" + i);
+    if (qty) qty.innerHTML = legQtyHtml(leg);
+    const st = document.getElementById("hStats" + i);
+    if (st) st.innerHTML = legStatsHtml(leg);
+    const wn = document.getElementById("hWarn" + i);
+    if (wn) wn.innerHTML = legWarnHtml(leg);
+    if (legTradeable(leg)) {
+      const btn = document.querySelector(`.legtradebtn[data-leg="${i}"]`);
+      if (btn) btn.textContent = legButtonLabel(leg);
+    } else {
+      const note = document.getElementById("hManual" + i);
+      if (note) note.textContent = legManualLabel(leg);
+    }
+  });
+}
+
+async function placeLegOrder(leg) {
+  const q = legQuote(leg);
+  const body = orderBody(q, legContracts(leg));
+  const r = await fetch("/api/trade", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function hedgeTradeLeg(i, btn) {
+  const leg = hedgeCtx.legs[i];
+  const res = document.getElementById("hLegRes" + i);
+  btn.disabled = true;
+  res.className = "legresult"; res.textContent = "";
+  try {
+    const j = await placeLegOrder(leg);
+    const want = legContracts(leg);
+    res.className = "legresult";
+    res.textContent = "confirming fill…";
+    loadTradingStatus();
+    const kind = await confirmFill(legQuote(leg).book,
+                                   bookLabel(legQuote(leg).book), j, null, want);
+    res.className = "legresult " + (kind === "filled" ? "ok" : "err");
+    res.textContent = (kind === "filled" ? "FILLED" :
+                       kind === "partial" ? "PARTIALLY FILLED — short cover" :
+                       "NOT FILLED — still working") + ` · ${j.detail || ""}`;
+  } catch (e) {
+    res.className = "legresult err";
+    res.textContent = "Order failed: " + e.message;
+    btn.disabled = false;
+  }
+}
+
+async function hedgeTradeBoth() {
+  const btn = document.getElementById("hedgeBothBtn");
+  btn.disabled = true; btn.textContent = "Placing…";
+  for (let i = 0; i < 2; i++) {
+    const legBtn = document.querySelector(`.legtradebtn[data-leg="${i}"]`);
+    if (legBtn && !legBtn.disabled) await hedgeTradeLeg(i, legBtn);
+  }
+  btn.textContent = "Place both orders";
+  btn.disabled = false;
+}
+
+/* ---------------- live exchange feed (free APIs, 1/second) ---------------- */
+
+let tickTimer = null, depthTimer = null, lastFeedAt = null, feedErr = 0;
+let nextTickAt = 0, countdownTimer = null;
+let tickGen = 0, tickAbort = null, tickInFlight = false;
+let lastCountdownHtml = "";
+
+/* Depth (resting size at the BBO) is polled per market on an adaptive cadence.
+   Size is what tells you whether an order can actually fill, and it is wildly
+   uneven — a market may show $3 of size or $600,000. A deep book barely moves
+   and is cheap to trust for a few seconds; a thin one can vanish between
+   ticks, so it gets watched every second. Kalshi is batched (one request for
+   every due ticker), Polymarket needs one request per market, so this is what
+   keeps the request rate sane. */
+const DEPTH_GAMES = 5;          // how many top games to track
+const DEPTH_THIN_USD = 500;     // < this much resting at the BBO counts as thin
+const DEPTH_THIN_MS = 1000;     // thin books: every second
+const DEPTH_DEEP_MS = 5000;     // deep books: every five
+const depthDueAt = new Map();   // market key -> next poll due (ms epoch)
+
+/* Refresh returns sportsbook quotes only (the exchanges have their own feed),
+   so move the exchange quotes we already hold onto the new game objects. They
+   are re-polled a moment later anyway; this just avoids a blank column flash. */
+function carryExchangeQuotes(oldData, newData) {
+  if (!oldData || !oldData.games || !newData || !newData.games) return;
+  const key = gameKey;
+  const prev = new Map(oldData.games.map(g => [key(g), g]));
+  for (const g of newData.games) {
+    const old = prev.get(key(g));
+    if (!old) continue;
+    for (const q of old.quotes) {
+      if (!EXCHANGES.has(q.book)) continue;
+      if (!g.quotes.some(x => x.book === q.book && x.team === q.team))
+        g.quotes.push(q);
+    }
+  }
+}
+
+/* Run a tick right now, resetting the clock around it. Safe to call from
+   anywhere: masterTick supersedes whatever was in flight. */
+function tickNow() {
+  needDepthSoon = true;
+  masterTick();
+}
+
+/* Update the exchange quotes already in `data` IN PLACE, so an open order
+   ticket keeps pointing at the same objects and just sees new numbers. */
+function mergeExchangeQuotes(payload) {
+  if (!data || !data.games) return;
+  const key = gameKey;
+  const idx = new Map(data.games.map(g => [key(g), g]));
+  for (const fg of payload.games || []) {
+    const g = idx.get(key(fg));
+    if (!g) continue;
+    for (const fq of fg.quotes) {
+      const ex = g.quotes.find(q => q.book === fq.book && q.team === fq.team);
+      if (!ex) { g.quotes.push(fq); continue; }
+      const knownDepth = (ex.meta || {}).depth;
+      const knownSweep = (ex.meta || {}).sweep;
+      ex.prob = fq.prob;
+      ex.american = fq.american;
+      ex.detail = fq.detail;
+      ex.meta = Object.assign({}, ex.meta, fq.meta || {});
+      // the fast poll carries no size — keep the last depth we actually measured
+      if (ex.meta.depth == null) ex.meta.depth = knownDepth;
+      if (ex.meta.sweep == null) ex.meta.sweep = knownSweep;
+      if (ex.meta.depth) ex.detail += ` ×${ex.meta.depth.toLocaleString()}`;
+    }
+  }
+  lastFeedAt = payload.refreshed_at || new Date().toISOString();
+}
+
+/* ONE tick drives both halves of the board, on one clock.
+
+   The sportsbook scan and the exchange poll used to be two independent loops
+   at the same period. Same cadence, different phase — so a row could pair a
+   DraftKings price from t with a Kalshi price from t+0.6s. That skew is
+   exactly what invents an arbitrage that was never simultaneously available.
+   Now both requests leave together and are applied together, so every row is
+   one snapshot.
+
+   Order of application still matters: /api/scan hands back a NEW game list,
+   /api/refresh merges into the one on screen, so the scan lands first. */
+let scanErr = 0;
+
+async function fetchExchanges(signal) {
+  const r = await fetch("/api/refresh", {
+    signal,
+    headers: sportsOn ? { "X-Sports": [...sportsOn].join(",") } : {},
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function fetchSportsbooks(signal) {
+  const r = await fetch("/api/scan", {
+    signal,
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sports: autoSports(), auto: true }),
+  });
+  const j = await r.json();
+  if (!r.ok) { j._httpFail = true; }
+  return j;
+}
+
+function tickPeriodNow() {
+  return autoOn ? tickPeriod() : (autoCfg.idle_interval_s || 10) * 1000;
+}
+
+async function masterTick() {
+  // Generation counter: only the newest tick is allowed to schedule the next
+  // one, so a tick that gets superseded (switching sports, pressing Refresh)
+  // cannot leave a second chain running or clobber the live one's timer.
+  const gen = ++tickGen;
+  clearTimeout(tickTimer); tickTimer = null;
+  if (tickAbort) tickAbort.abort();     // whatever is in flight is now stale
+
+  const started = Date.now();
+  const period = tickPeriodNow();
+  nextTickAt = started + period;        // set before any await, so the
+                                        // countdown is right from frame one
+  // A request that never comes back must not be able to stop the clock. This
+  // used to be a plain in-flight flag with no way out: switching markets left
+  // a slow poll for the OLD sport in flight, the flag stuck on, the chain
+  // never rescheduled, and the countdown froze at 0s.
+  const ctl = new AbortController();
+  tickAbort = ctl;
+  const deadline = setTimeout(() => ctl.abort(), Math.max(4000, period * 3));
+  tickInFlight = true;
+
+  try {
+    const jobs = [fetchExchanges(ctl.signal).catch(e => ({ _err: e }))];
+    if (autoOn) jobs.push(fetchSportsbooks(ctl.signal).catch(e => ({ _err: e })));
+    const [feed, scan] = await Promise.all(jobs);
+    if (gen !== tickGen) return;        // superseded mid-flight; drop the data
+
+    if (scan && !scan._err && !scan._httpFail) {
+      carryExchangeQuotes(data, scan);
+      data = scan; mlData = scan;
+      if (scan.budget) autoCfg = scan.budget;
+      scanErr = 0;
+    } else if (scan && scan.blocked) {
+      // a spend guard ended the run; the server has already disarmed
+      if (scan.budget) autoCfg = scan.budget;
+      autoOn = false;
+    } else if (scan) {
+      scanErr++;
+    }
+
+    if (feed && !feed._err) {
+      mergeExchangeQuotes(feed);
+      feedErr = 0;
+      if (needDepthSoon) { needDepthSoon = false; depthDueAt.clear(); }
+    } else if (feed) {
+      feedErr++;
+    }
+    refreshDerived();          // one render per tick, not one per response
+  } catch (e) { /* a dropped tick is harmless; the next one re-reads */ }
+  finally {
+    clearTimeout(deadline);
+    if (gen === tickGen) tickInFlight = false;
+    // Rescheduling lives in `finally` so there is no path — thrown, aborted,
+    // or returned early — that leaves the clock stopped.
+    if (gen === tickGen) {
+      tickAbort = null;
+      renderAuto();
+      scheduleTick(started);
+    }
+  }
+}
+
+/* Next tick measured from the START of this one, so ticks never overlap and
+   the cadence doesn't drift by however long the round trip took. */
+function scheduleTick(started) {
+  clearTimeout(tickTimer);      // exactly one chain, whoever calls this
+  const period = tickPeriodNow();
+  const wait = (feedErr || scanErr) ? Math.max(3000, period)
+                                    : Math.max(0, period - (Date.now() - started));
+  nextTickAt = Date.now() + wait;
+  tickTimer = setTimeout(masterTick, wait);
+}
+
+function depthKey(q) {
+  return q.book === "kalshi" ? "k:" + q.meta.ticker
+                             : "p:" + q.meta.market_slug;
+}
+
+/* Dollars resting at the BBO for this market — the thinnest side of it, since
+   that is the side that will disappoint you. Unknown size counts as thin. */
+function marketNotional(quotes) {
+  let min = Infinity;
+  for (const q of quotes) {
+    const d = (q.meta || {}).depth, a = (q.meta || {}).ask;
+    if (d == null || !a) return 0;
+    min = Math.min(min, d * a);
+  }
+  return min === Infinity ? 0 : min;
+}
+
+async function depthTick() {
+  const started = Date.now();
+  try {
+    // group the tracked games' exchange quotes by market
+    const markets = new Map();
+    for (const g of sortedGames.slice(0, DEPTH_GAMES)) {
+      for (const q of g.quotes) {
+        if (!q.meta || !EXCHANGES.has(q.book)) continue;
+        const k = depthKey(q);
+        if (!markets.has(k)) markets.set(k, { book: q.book, quotes: [], game: g });
+        markets.get(k).quotes.push(q);
+      }
+    }
+
+    const tickers = [], slugs = [], due = [];
+    for (const [k, m] of markets) {
+      if (started < (depthDueAt.get(k) || 0)) continue;   // not due yet
+      due.push(k);
+      if (m.book === "kalshi") tickers.push(m.quotes[0].meta.ticker);
+      else slugs.push(m.quotes[0].meta.market_slug);
+    }
+    // forget markets we no longer track, so the map can't grow forever
+    for (const k of [...depthDueAt.keys()]) if (!markets.has(k)) depthDueAt.delete(k);
+
+    if (tickers.length || slugs.length) {
+      const r = await fetch("/api/depth", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kalshi_tickers: tickers, polymarket_slugs: slugs }),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        mergeDepth([...new Set([...markets.values()].map(m => m.game))], j);
+        refreshDerived();
+      }
+    }
+
+    // re-schedule each polled market by how thin it now looks
+    const now = Date.now();
+    for (const k of due) {
+      const m = markets.get(k);
+      const thin = m && marketNotional(m.quotes) < DEPTH_THIN_USD;
+      depthDueAt.set(k, now + (thin ? DEPTH_THIN_MS : DEPTH_DEEP_MS));
+    }
+  } catch (e) { /* depth is a nice-to-have; prices keep flowing */ }
+  // the scheduler itself wakes every second and only fetches what is due
+  depthTimer = setTimeout(depthTick,
+    Math.max(0, DEPTH_THIN_MS - (Date.now() - started)));
+}
+
+function mergeDepth(games, payload) {
+  const k = payload.kalshi || {}, pm = payload.polymarket_us || {};
+  for (const g of games) {
+    for (const q of g.quotes) {
+      if (!q.meta) continue;
+      if (q.book === "kalshi") {
+        const d = k[q.meta.ticker];
+        if (d && d.depth != null) q.meta.depth = d.depth;
+        if (d && d.sweep != null) q.meta.sweep = d.sweep;
+      } else if (q.book === "polymarket_us") {
+        const side = (pm[q.meta.market_slug] || {})[q.meta.long ? "long" : "short"];
+        if (side && side.depth != null) q.meta.depth = side.depth;
+        if (side && side.sweep != null) q.meta.sweep = side.sweep;
+      }
+    }
+  }
+}
+
+function refreshDerived() {
+  if (propView) return;   // the HR view has its own data; don't overwrite it
+  if (boostEditing) return;   // never re-render while a boost is being typed
+  // Re-rank live. While the cursor is over the table (or a ticket is open) hold
+  // the current order so a Place order button can't jump out from under it.
+  renderTable(pointerInTable || !!hedgeCtx);
+  if (hedgeCtx) { refreshHedgeButtons(); updateHedgeTotals(); }
+  if (modalCtx) updateCalc();
+}
+
+/* ---------------- data loading ---------------- */
+
+async function doScan() {
+  const btn = document.getElementById("scanBtn");
+  const err = document.getElementById("error");
+  btn.disabled = true; btn.textContent = "Scanning…"; err.style.display = "none";
+  try {
+    const r = await fetch("/api/scan", { method: "POST" });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    carryExchangeQuotes(data, j);   // keep live exchange prices across the swap
+    data = j; mlData = j;
+    renderMeta(); applyView();
+    tickNow();                  // re-poll exchanges immediately
+  } catch (e) {
+    err.textContent = "Refresh failed: " + e.message;
+    err.style.display = "block";
+  } finally {
+    btn.disabled = false; btn.textContent = "Refresh";
+  }
+}
+
+async function loadLast() {
+  try {
+    const r = await fetch("/api/last");
+    const j = await r.json();
+    if (j && j.games) { data = j; mlData = j; renderMeta(); }
+  } catch (e) { /* no cached scan yet */ }
+  renderTable();
+}
+
+async function loadTradingStatus(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "checking…"; }
+  try {
+    const r = await fetch("/api/trading/status");
+    trading = await r.json();
+  } catch (e) {
+    trading = { kalshi: { configured: false, error: String(e) },
+                polymarket: { configured: false, error: String(e) } };
+  }
+  renderTradingBar();
+  renderTable();  // re-render so tradeable cells activate
+}
+
+const liveChip = document.getElementById("liveChip");
+liveChip.onclick = () => {
+  includeLive = !includeLive;
+  liveChip.classList.toggle("on", includeLive);
+  document.getElementById("autoBox").hidden = !includeLive;
+  document.getElementById("scanBtn").hidden = propView || includeLive;
+  try { localStorage.setItem("includeLive", includeLive ? "1" : "0"); } catch (e) {}
+  renderInstantFlag();
+  renderTable();
+};
+
+const safetyChip = document.getElementById("safetyChip");
+safetyChip.onclick = () => {
+  safetyOn = !safetyOn;
+  safetyChip.classList.toggle("on", safetyOn);
+renderInstantFlag();
+  try { localStorage.setItem("safetyOn", safetyOn ? "1" : "0"); } catch (e) {}
+  renderInstantFlag();
+  renderTable(true);
+};
+document.getElementById("autoAmt").oninput = () => {
+  try { localStorage.setItem("autoAmt", autoAmount()); } catch (e) {}
+  renderInstantFlag();
+  renderTable(true);
+};
+
+// restore quickbuy settings
+try {
+  const a = localStorage.getItem("autoAmt");
+  if (a) document.getElementById("autoAmt").value = a;
+  // Safety deliberately does NOT persist in the off position: a page that
+  // loads already armed turns a stray click into a real order. Arming is one
+  // click, so every load starts safe.
+  if (localStorage.getItem("includeLive") === "1") {
+    includeLive = true;
+    liveChip.classList.add("on");
+    document.getElementById("autoBox").hidden = false;
+    document.getElementById("scanBtn").hidden = true;
+  }
+} catch (e) {}
+safetyChip.classList.toggle("on", safetyOn);
+renderInstantFlag();   // must run AFTER the restore above, not before
+
+
+function watchTablePointer() {
+  const wrap = document.getElementById("tableWrap");
+  wrap.addEventListener("mouseenter", () => { pointerInTable = true; });
+  wrap.addEventListener("mouseleave", () => {
+    pointerInTable = false;
+    refreshDerived();          // apply any ranking that changed while hovering
+  });
+}
+
+/* ---------------- auto-refresh (the only thing that spends money) ----------
+
+   The sportsbook legs now re-scan once a second, which is affordable per tick
+   and ruinous per night. So auto-refresh is armed, never ambient, and four
+   independent things stop it:
+
+     tab hidden   -> heartbeats stop; the server disarms within ~6s. Covers a
+                     closed laptop, a closed tab, and a killed browser.
+     idle         -> no mouse or keyboard in the tab for AUTO_IDLE_STOP_S.
+     time         -> a hard run limit, whatever you are doing.
+     credits      -> per-minute, per-run and per-day ceilings.
+
+   Only the last two are enforced here for display; ALL of them are enforced
+   again on the server, because a browser that has crashed mid-loop or a stray
+   curl must not be able to keep spending. Re-arming is one click. */
+let autoOn = false, autoBeatTimer = null;
+let autoCfg = {}, lastInputAt = Date.now();
+// The heartbeat runs on its OWN clock, never the scan's. They were one loop at
+// first, which meant the 10s tier beat every 10s and starved its own 6s
+// dead-man switch — auto disarmed itself a tick after arming.
+const BEAT_MS = 2000;
+
+function autoSports() {
+  return sportsOn ? [...sportsOn] : [];
+}
+
+/* Is a game that has already started actually on screen? That — not the clock
+   or the fixture list — is what makes a 1-second cadence worth paying for: a
+   game in progress re-prices constantly, and one hours away does not. It
+   respects the live-games filter on purpose, because a live game you have
+   filtered out is not one you are watching. */
+function liveOnScreen() {
+  const now = Date.now();
+  return sortedGames.some(g => new Date(g.start).getTime() <= now);
+}
+
+/* Milliseconds between ticks, for both the paid sportsbook scan and the free
+   exchange feed, so the whole board moves on one clock. */
+function tickPeriod() {
+  const live = (autoCfg.live_interval_s || 1) * 1000;
+  const idle = (autoCfg.idle_interval_s || 10) * 1000;
+  return liveOnScreen() ? live : idle;
+}
+
+async function autoPost(action, extra) {
+  const r = await fetch("/api/auto", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(Object.assign({ action, sports: autoSports() }, extra || {})),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+/* The heartbeat. This is the whole of the on/off logic now: there is no
+   switch, so spending is enabled exactly while this loop keeps beating, and it
+   only beats when the tab is VISIBLE and someone has touched the page inside
+   the idle window. Walk away for half an hour and the paid half goes quiet on
+   its own; come back and the very next beat turns it on again with no click.
+
+   It runs at a fixed 2s regardless of the scan tier — that separation matters,
+   because riding the scan's clock let the 10s tier starve its own 6s dead-man
+   switch. */
+async function autoBeat() {
+  clearTimeout(autoBeatTimer);
+  const here = !document.hidden && !propView &&
+               (Date.now() - lastInputAt) <= (autoCfg.idle_stop_s || 1800) * 1000;
+  if (here) {
+    try {
+      autoCfg = await autoPost("beat");
+      autoOn = !!autoCfg.armed;
+    } catch (e) { /* a dropped beat is fine; the server allows a few seconds */ }
+  } else if (autoOn) {
+    // Stop paying immediately rather than waiting out the heartbeat timeout.
+    autoOn = false;
+    autoPost("stop", { reason: document.hidden ? "tab hidden" : "idle" })
+      .then(j => { autoCfg = j; renderAuto(); }).catch(() => {});
+  }
+  renderAuto();
+  // The timer keeps running even while idle — that is what lets it re-arm the
+  // moment you come back, with nothing to press.
+  autoBeatTimer = setTimeout(autoBeat, BEAT_MS);
+}
+
+/* The only thing worth saying out loud is a stop you would not expect.
+   Idle and hidden-tab are self-explanatory and fix themselves the moment you
+   touch the page, so they say nothing; a spend ceiling or being outside active
+   hours freezes the sportsbook columns until something changes, so that does
+   get said. */
+function renderAuto() {
+  const meta = document.getElementById("autoMeta");
+  const why = autoOn ? null : autoCfg.blocked_by;
+  meta.className = why ? "warn" : "";
+  meta.textContent = why ? `sportsbooks paused — ${why}` : "";
+}
+
+/* Any real interaction with the page counts as "still here". */
+for (const ev of ["mousemove", "keydown", "click", "wheel", "touchstart"]) {
+  window.addEventListener(ev, () => { lastInputAt = Date.now(); },
+                          { passive: true });
+}
+// Hiding the tab or closing it stops the beats on its own; these just make it
+// instant instead of waiting out the heartbeat timeout.
+document.addEventListener("visibilitychange", () => { autoBeat(); });
+window.addEventListener("pagehide", () => {
+  if (autoOn) navigator.sendBeacon("/api/auto",
+    new Blob([JSON.stringify({ action: "stop", reason: "page closed" })],
+             { type: "application/json" }));
+});
+
+function startFeeds() {
+  if (!tickTimer) masterTick();
+  if (!autoBeatTimer) autoBeat();
+  if (!countdownTimer) countdownTimer = setInterval(renderCountdown, 100);
+  if (!depthTimer) depthTimer = setTimeout(depthTick, 250);
+}
+
+document.getElementById("allOnBtn").onclick = () => {
+  selected = new Set(bookOrder);
+  afterBookChange(false);
+};
+document.getElementById("allOffBtn").onclick = () => {
+  // Deliberately allowed to empty the set: "clear, then switch on the two I
+  // care about" is the whole reason for the button, and a forced survivor
+  // would just be a book you then have to remember to turn off.
+  selected = new Set();
+  anchorBook = null;
+  afterBookChange(false);
+};
+document.getElementById("addAllBtn").onclick = () => {
+  for (const k of bookHidden) { bookOrder.push(k); selected.add(k); }
+  bookHidden = [];
+  afterBookChange(true);
+};
+
+loadBookLayout();
+BOOKS = mlBooks();
+wireWheel();
+renderNav();
+renderChips();
+renderAuto();
+fetch("/api/budget").then(r => r.json())
+  .then(j => { autoCfg = j; renderAuto(); }).catch(() => {});
+watchTablePointer();
+loadLast().then(() => { applyNav(); startFeeds(); });
+loadTradingStatus();
+</script>
+</body>
+</html>
