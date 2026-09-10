@@ -767,11 +767,12 @@
     <div class="sub" id="hGame"></div>
     <div id="hLegs"></div>
     <div class="htotals">
-      <div class="cell">
-        <label class="stakebox">$<input id="hTotal" type="number" min="0" step="1" value="100"></label>
-        <span>total stake</span>
-      </div>
-      <div class="cell"><b id="hCost">—</b><span>actual cost</span></div>
+      <!-- "total stake" used to sit here with its own input. It restated the
+           cost next to it, so it is gone; sizing is driven from either leg,
+           which is how it was reached in practice anyway. The input survives
+           hidden because the total is still what splits a fresh ticket. -->
+      <input id="hTotal" type="hidden" value="100">
+      <div class="cell"><b id="hCost">—</b><span>cash at risk</span></div>
       <div class="cell profit"><b id="hPnlA">—</b><span id="hPnlALbl">if A wins</span></div>
       <div class="cell profit"><b id="hPnlB">—</b><span id="hPnlBLbl">if B wins</span></div>
       <div class="cell"><b id="hRoi">—</b><span id="hRoiLbl">worst-case ROI</span></div>
@@ -2892,20 +2893,31 @@ function updateHedgeTotals() {
   document.getElementById("hCost").textContent = "$" + cost.toFixed(2);
 
   const money = v => (v >= 0 ? "+$" : "\u2212$") + Math.abs(v).toFixed(2);
-  const put = (id, lblId, v, team) => {
+  const put = (id, lblId, v, team, prob) => {
     const el = document.getElementById(id);
     el.textContent = money(v);
     el.className = v >= 0 ? "pos" : "neg";
-    document.getElementById(lblId).textContent = "if " + team + " wins";
+    document.getElementById(lblId).textContent = "if " + team + " wins" + (prob || "");
   };
-  put("hPnlA", "hPnlALbl", pnlA, A.team);
-  put("hPnlB", "hPnlBLbl", pnlB, B.team);
+  // The two prices imply probabilities that sum to more than 1 (the vig) or,
+  // on an arb, less. Sharing that excess between them in proportion strips it
+  // out and leaves what the market actually thinks each side's chance is —
+  // which is the honest weight to read the two P&L figures against, since one
+  // of them is far likelier to be the one you get.
+  const qA = eProb(legQuote(A)), qB = eProb(legQuote(B));
+  const tot2 = qA + qB;
+  const shown = t => (tot2 > 0 ? ` (${(t / tot2 * 100).toFixed(1)}%)` : "");
+  put("hPnlA", "hPnlALbl", pnlA, A.team, shown(qA));
+  put("hPnlB", "hPnlBLbl", pnlB, B.team, shown(qB));
 
   const rEl = document.getElementById("hRoi");
   rEl.textContent = (cost > 0 ? (worst / cost * 100).toFixed(2) : "0.00") + "%";
   rEl.className = worst >= 0 ? "pos" : "neg";
   document.getElementById("hRoiLbl").textContent =
-    Math.abs(pnlA - pnlB) < 0.005 ? "ROI either way" : "worst-case ROI";
+    // A penny apart is a balanced hedge — whole-contract rounding on an
+    // exchange leg cannot land exactly, and half a cent was tight enough that
+    // a perfectly good hedge reported a "worst case".
+    Math.abs(pnlA - pnlB) <= 0.011 ? "ROI either way" : "worst-case ROI";
 
   document.getElementById("hedgeBothWrap").style.display =
     (legTradeable(A) && legTradeable(B)) ? "block" : "none";

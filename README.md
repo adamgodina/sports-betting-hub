@@ -1026,6 +1026,30 @@ total — only collateral on shard 3 can fill an MLB order.
 Clicking an individual price cell still opens the single-order modal, but it is
 no longer the main path.
 
+### Reading the totals
+
+Four figures under the legs: cash at risk, the P&L of each outcome, and the
+ROI. There used to be a fifth — "total stake" — which restated the cost sitting
+next to it, so it is gone. Sizing is driven from either leg, which is how it
+was reached in practice anyway.
+
+Each outcome carries its **vig-free probability** in brackets:
+
+```
+$176.13            +$62.86                          +$62.87                        35.69%
+cash at risk       if Colorado Rockies wins (28.6%)  if New York Yankees wins (71.4%)  ROI either way
+```
+
+The two prices imply probabilities summing to more than 1 (the vig) or, on an
+arb, less. Sharing that excess between them in proportion strips it out and
+leaves what the market actually thinks each side's chance is — the honest
+weight to read two P&L figures against, since one of them is far likelier to be
+the one you get. They always total 100%.
+
+A hedge landing within a **penny** counts as balanced and reads "ROI either
+way". Whole-contract rounding on an exchange leg cannot land exactly, and the
+old half-cent tolerance made a perfectly good hedge report a "worst case".
+
 ### Fixing one leg (uneven hedges)
 
 A sportsbook stake of $318.47 looks like exactly what it is, so the size an
