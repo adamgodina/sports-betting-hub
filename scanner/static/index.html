@@ -780,7 +780,7 @@
       <div class="cell"><b id="hCost">—</b><span>total cost</span></div>
       <div class="cell profit"><b id="hPnlA">—</b><span id="hPnlALbl">if A wins</span></div>
       <div class="cell profit"><b id="hPnlB">—</b><span id="hPnlBLbl">if B wins</span></div>
-      <div class="cell"><b id="hRoi">—</b><span id="hRoiLbl">worst-case ROI</span></div>
+      <div class="cell"><b id="hRoi">—</b><span id="hRoiLbl">EV ROI</span></div>
     </div>
     <div id="hedgeBothWrap" style="display:none">
       <button id="hedgeBothBtn" onclick="hedgeTradeBoth()">Place both orders</button>
@@ -2883,7 +2883,6 @@ function updateHedgeTotals() {
   const cost = fA.cost + fB.cost;              // actual outlay after rounding
   const pnlA = fA.payout - cost;               // this side wins, the other dies
   const pnlB = fB.payout - cost;
-  const worst = Math.min(pnlA, pnlB);
 
   // In bonus mode the only real money is the hedge, so the total box shows
   // that rather than adding in a stake that never leaves your pocket — and it
@@ -2919,14 +2918,17 @@ function updateHedgeTotals() {
   put("hPnlA", "hPnlALbl", pnlA, A.team, shown(qA));
   put("hPnlB", "hPnlBLbl", pnlB, B.team, shown(qB));
 
+  // Expected value, not the worst case: each outcome weighted by the vig-free
+  // chance shown beside it. On a balanced hedge the two are the same number, so
+  // nothing is lost there — but on an uneven one the worst case named a result
+  // that might be very unlikely, which is a poor guide to whether the bet is
+  // worth making. A normal hedge lands negative here, and should: that is the
+  // vig you are paying.
+  const ev = tot2 > 0 ? (qA * pnlA + qB * pnlB) / tot2 : 0;
   const rEl = document.getElementById("hRoi");
-  rEl.textContent = (cost > 0 ? (worst / cost * 100).toFixed(2) : "0.00") + "%";
-  rEl.className = worst >= 0 ? "pos" : "neg";
-  document.getElementById("hRoiLbl").textContent =
-    // A penny apart is a balanced hedge — whole-contract rounding on an
-    // exchange leg cannot land exactly, and half a cent was tight enough that
-    // a perfectly good hedge reported a "worst case".
-    Math.abs(pnlA - pnlB) <= 0.011 ? "ROI either way" : "worst-case ROI";
+  rEl.textContent = (cost > 0 ? (ev / cost * 100).toFixed(2) : "0.00") + "%";
+  rEl.className = ev >= 0 ? "pos" : "neg";
+  document.getElementById("hRoiLbl").textContent = "EV ROI";
 
   document.getElementById("hedgeBothWrap").style.display =
     (legTradeable(A) && legTradeable(B)) ? "block" : "none";

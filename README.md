@@ -1037,8 +1037,8 @@ Each outcome carries its **vig-free probability** beside the money, in the
 caption's grey so it annotates the figure rather than competing with it:
 
 ```
-$176.13      +$62.86 (28.6%)             +$62.87 (71.4%)              35.69%
-total cost   if Colorado Rockies wins    if New York Yankees wins     ROI either way
+$176.13      +$62.86 (28.6%)             +$62.87 (71.4%)             35.69%
+total cost   if Colorado Rockies wins    if New York Yankees wins    EV ROI
 ```
 
 The two prices imply probabilities summing to more than 1 (the vig) or, on an
@@ -1047,9 +1047,21 @@ leaves what the market actually thinks each side's chance is — the honest
 weight to read two P&L figures against, since one of them is far likelier to be
 the one you get. They always total 100%.
 
-A hedge landing within a **penny** counts as balanced and reads "ROI either
-way". Whole-contract rounding on an exchange leg cannot land exactly, and the
-old half-cent tolerance made a perfectly good hedge report a "worst case".
+The last figure is **EV ROI**: each outcome weighted by the vig-free chance
+beside it. It replaced a worst-case ROI, which on an uneven hedge named a
+result that might be very unlikely — a poor guide to whether the bet is worth
+making.
+
+It has a useful property. At vig-free probabilities every split of the same two
+prices has the *same* expected return, so EV ROI does not move when you resize
+the legs — it measures the quality of the prices, not the sizing. Locking a leg
+and cutting the other from $100 to $40 swung the outcomes from −$0.16/−$0.16 to
++$18.63/−$13.37, and EV ROI stayed at −0.16%. The worst case would have read
+−16%.
+
+So a plain hedge lands slightly negative, and should: that is the vig. An
+arbitrage reads positive (+0.84% on a live row), and a bonus bet reads strongly
+positive (+35.69%) because one leg cost nothing.
 
 ### Fixing one leg (uneven hedges)
 
