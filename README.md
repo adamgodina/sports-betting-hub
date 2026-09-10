@@ -44,6 +44,25 @@ credentials are what turn the Buy buttons on. Every field is documented in
 `data/` (cached board, scan history, the persisted credit ledger) is created on
 first run and is gitignored, as are `.env` and any `.pem`.
 
+### Keys
+
+`.gitignore` covers `.env`, `.env.*`, `*.pem`, `*.key` and `data/`, so nothing
+sensitive is committed by default. Two habits worth keeping anyway:
+
+* **Store the Kalshi `.pem` outside the repo** and point `.env` at it with an
+  absolute path. A private key that lives inside the working tree is one
+  `git add -f`, one `.gitignore` edit, or one careless `zip` away from being
+  shared — and this particular key can place real orders.
+* **Rotate anything that has ever been committed.** Deleting a secret in a
+  later commit does not remove it from history; treat it as public and issue a
+  new one.
+
+Verify before your first push:
+
+```bash
+git ls-files | grep -Ei '\.env$|\.pem$|\.key$'   # must print nothing
+```
+
 On macOS you can double-click **Odds Scanner.app** instead: it finds a python
 (preferring a `.venv/` in the repo), starts the server if it is not already up,
 and opens the UI. It resolves the project directory from its own location, so
