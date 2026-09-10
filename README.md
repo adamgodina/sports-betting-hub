@@ -635,7 +635,7 @@ names neither the shard nor the shortfall, so `place_order` pre-flights the
 check and raises something usable instead:
 
 > not enough collateral on Kalshi shard 0, where KXNFLGAME-…-NYG trades: this
-> order needs $500.48 and that shard holds $301.79 — you have $237.52 on shard
+> order needs $500.00 and that shard holds $300.00 — you have $200.00 on shard
 > 3, which can be moved to shard 0.
 
 `exchange_index: -1` **is** valid — it is Kalshi's auto-route sentinel. Only
