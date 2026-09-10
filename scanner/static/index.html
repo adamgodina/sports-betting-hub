@@ -763,7 +763,15 @@ const BOOK_LABEL = { draftkings: "DraftKings", fanduel: "FanDuel",
    anything that remembers a game by reference is comparing against objects
    that no longer exist a second later. */
 function gameKey(g) {
-  return `${g.sport || "mlb"}|${g.away}|${g.home}|${g.start}`;
+  // `title` is what makes a PROP row unique. Its away/home are the two sides
+  // of the bet ("1+ HR" / "No HR"), not teams, so every player in a game had
+  // an identical key — 67 rows collapsed to 5, one per game, up to 18 players
+  // deep. Anything keyed this way then treated them as the same row: the
+  // exchange-quote carry-over kept only the last of each group and copied that
+  // one player's Kalshi and Polymarket prices onto all the others, which is
+  // how a row could show one batter's book price beside another's exchange
+  // price. Moneyline games have no title, so their key is unchanged in effect.
+  return `${g.sport || "mlb"}|${g.title || ""}|${g.away}|${g.home}|${g.start}`;
 }
 
 function bookLabel(key) {
@@ -2806,7 +2814,12 @@ async function masterTick() {
     if (gen !== tickGen) return;        // superseded mid-flight; drop the data
 
     if (scan && !scan._err && !scan._httpFail) {
-      carryExchangeQuotes(data, scan);
+      // Carrying old exchange quotes across a scan stops a column blanking
+      // between the sportsbook pull and the next price poll. Props need none
+      // of it — that scan fetches Kalshi and Polymarket itself on every call —
+      // and there it is actively wrong: a player the exchanges have stopped
+      // quoting would keep showing the stale price instead of going blank.
+      if (!propView) carryExchangeQuotes(data, scan);
       // one tick, two possible payloads — keep them in their own slots so
       // switching market does not show the other view's rows
       if (scan.quota) { propData = scan; propQuota = scan.quota; }

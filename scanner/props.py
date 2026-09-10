@@ -35,6 +35,7 @@ import re
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 
 import requests
 
@@ -46,6 +47,39 @@ KALSHI_MARKETS = "https://api.elections.kalshi.com/trade-api/v2/markets"
 HR_SERIES = "KXMLBHR"
 HR_POINT = 0.5                      # the 1+ line
 KALSHI_THETA = 0.07                 # taker fee coefficient
+
+
+# A player's name alone is NOT a safe join key. The exchange feeds cover every
+# open market, which can span a doubleheader or two dates at once, so the same
+# name can legitimately appear more than once. Keying a flat dict by name means
+# the last one silently wins and a row can end up hedged against a DIFFERENT
+# GAME. Entries are therefore kept as lists and chosen by whose game start is
+# closest, with anything outside this window refused rather than guessed.
+PROP_MATCH_TOLERANCE = timedelta(minutes=90)
+
+
+def _parse_iso(v):
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _pick_for_game(entries, when):
+    """The entry belonging to the same game as `when`, or None.
+
+    Refusing is the right answer when it cannot be established: a wrong hedge
+    is far worse than a missing one, because it leaves the book leg naked while
+    looking covered.
+    """
+    if not entries:
+        return None
+    dated = [e for e in entries if e.get("start")]
+    if when is None or not dated:
+        # Nothing to disambiguate with — only safe if there is no ambiguity.
+        return entries[0] if len(entries) == 1 else None
+    best = min(dated, key=lambda e: abs(e["start"] - when))
+    return best if abs(best["start"] - when) <= PROP_MATCH_TOLERANCE else None
 
 
 def norm_player(name: str) -> str:
@@ -91,7 +125,7 @@ def fetch_kalshi_hr() -> dict:
                 continue
             yes = float(m.get("yes_ask_dollars") or 0)
             no = float(m.get("no_ask_dollars") or 0)
-            out[key] = {
+            out.setdefault(key, []).append({
                 "player": player,
                 "ticker": m["ticker"],
                 "event_ticker": m.get("event_ticker"),
@@ -99,7 +133,7 @@ def fetch_kalshi_hr() -> dict:
                 "yes_ask": yes if 0 < yes < 1 else None,
                 "no_ask": no if 0 < no < 1 else None,
                 "exchange_index": m.get("exchange_index", -1),
-            }
+            })
         cursor = d.get("cursor")
         if not cursor or not d.get("markets"):
             break
@@ -168,9 +202,12 @@ def fetch_polymarket_hr(game_slugs=None) -> dict:
                             no = v
                     if yes is None and no is None:
                         continue
-                    out[key] = {"player": player, "market_slug": m.get("slug"),
-                                "yes_ask": yes, "no_ask": no,
-                                "fee": m.get("feeCoefficient") or 0.06}
+                    out.setdefault(key, []).append({
+                        "player": player, "market_slug": m.get("slug"),
+                        "yes_ask": yes, "no_ask": no,
+                        "start": _parse_iso(m.get("gameStartTime")
+                                            or ev.get("startTime")),
+                        "fee": m.get("feeCoefficient") or 0.06})
     return out
 
 
@@ -267,6 +304,7 @@ def scan(max_events: int = None, top_per_game: int = None):
 
     billed = 0
     for ev, (book_best, meta) in zip(events, results):
+        ev_start = _parse_iso(ev.get("commence_time"))
         if meta and meta.get("remaining"):
             remaining = meta["remaining"]
         if meta:
@@ -279,8 +317,8 @@ def scan(max_events: int = None, top_per_game: int = None):
         for key, b in keep:
             if top_per_game and game_rows >= top_per_game:
                 break
-            k = kalshi.get(key)
-            pm = pmarket.get(key)
+            k = _pick_for_game(kalshi.get(key), ev_start)
+            pm = _pick_for_game(pmarket.get(key), ev_start)
             k_no = k.get("no_ask") if k else None
             pm_no = pm.get("no_ask") if pm else None
             if not k_no and not pm_no:

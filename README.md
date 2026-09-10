@@ -906,6 +906,38 @@ Live games are shown here like anywhere else. Hiding the chip meant every
 started game was silently filtered out with no way to bring it back, which is
 backwards for a market that matters most once the first pitch is thrown.
 
+## Linking a prop to the right market
+
+A 1+ HR row joins three venues on one batter, so the join has to be exact — a
+row that pairs one player's book price with another's exchange price looks
+perfectly normal and leaves the book leg naked. Two separate defects here, both
+now closed:
+
+**The client keyed prop rows by game, not by player.** `gameKey()` is
+`sport|away|home|start`, and a prop row's away/home are the two sides of the
+bet (`1+ HR` / `No HR`), not teams — so every player in a game produced an
+identical key. Measured: **67 rows collapsed to 5 keys, up to 18 players deep.**
+The exchange-quote carry-over builds a `Map` from that key, which keeps only
+the last of each group and then copied that one player's Kalshi and Polymarket
+prices onto every other row in the game. `title` is now part of the key.
+
+That carry-over is also skipped entirely in the HR view. It exists to stop a
+column blanking between the sportsbook pull and the next price poll; the props
+scan fetches both exchanges itself on every call, so there is nothing to bridge
+— and carrying would keep showing a stale price for a player the exchanges had
+stopped quoting.
+
+**The server joined on the player's name alone.** Both exchange feeds were
+flattened into `{player: market}` across every open market, so a name appearing
+twice — a doubleheader, or two dates inside the feed window — silently kept the
+last one and could hedge against the wrong game. Entries are now lists, and
+`_pick_for_game()` chooses by closest game start within 90 minutes, refusing
+rather than guessing when it cannot be established. Kalshi's start comes from
+its event ticker, Polymarket's from the market's `gameStartTime`.
+
+Verified across a live slate: 67 rows, 67 distinct keys, 46 carrying both
+venues, and every venue reference agreeing with its row's game date.
+
 ## The order ticket (primary flow)
 
 Every game row has a yellow **Place order** button in the Vig column. The calculator lets you pick a book
