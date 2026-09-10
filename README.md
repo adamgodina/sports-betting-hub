@@ -264,6 +264,23 @@ Without one, two games on the same combined price could swap places every tick
 for no visible reason. Measured across a 98-row board: zero rows move between
 ticks unless a price actually changed.
 
+**An arbitrage outranks the freeze.** Holding the order absolutely had a worse
+failure than shuffling: a game that *became* an arb while the cursor was over
+the table stayed wherever it had been, sitting below worse prices until you
+moved the mouse away. In live mode that is the normal case, because that is
+exactly when a price moves far enough to open one. Measured on a 98-row NCAAF
+board, every render put a non-arb at the top with a real arb pinned at index 1.
+
+So the hold now applies *within* a class rather than across it: arbs always
+render above non-arbs, and nothing shuffles inside either group — which is what
+keeps a Place order button from moving out from under a click. Verified zero
+violations of "no arb below a non-arb" across a run of live renders.
+
+The trade-off is visible and intended. While you hover, arbs keep their
+relative order rather than re-sorting by ROI (top of board reads
+`0.9964, 0.9995, 0.9799, 0.9851` — all arbs, order held); move the cursor off
+the table and the full ranking snaps back (`0.9799, 0.9851, 0.9964, 0.9995`).
+
 ### One clock, and a countdown instead of a timestamp
 
 The sportsbook scan and the exchange poll are a **single tick**. They used to

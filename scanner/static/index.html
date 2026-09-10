@@ -1424,7 +1424,17 @@ function renderTable(preserveOrder) {
     // board back into the server's start-time order — which looked exactly
     // like the best game being sent to the bottom the moment you hovered.
     const pos = new Map(sortedGames.map((g, i) => [gameKey(g), i]));
+    // An arbitrage outranks the freeze. Holding the order absolutely meant a
+    // game that BECAME an arb while your cursor was over the table stayed
+    // wherever it had been, buried under worse prices — and in live mode that
+    // is the normal case, because that is exactly when a price moves far
+    // enough to open one. So the hold applies WITHIN a class, not across it:
+    // arbs are always above non-arbs, and nothing shuffles inside either
+    // group, which is what stops a button moving out from under a click.
+    const cls = x => (x.a && x.a.sum < 1) ? 0 : 1;
     analyzed.sort((x, y) => {
+      const c = cls(x) - cls(y);
+      if (c) return c;
       const a = pos.get(gameKey(x.g)), b = pos.get(gameKey(y.g));
       if (a === undefined && b === undefined) return rank(x, y);
       if (a === undefined) return 1;      // new arrivals go to the end
