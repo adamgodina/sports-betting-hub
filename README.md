@@ -239,6 +239,34 @@ Sizing a hedge (`fresh_sportsbook_price`) is counted against the day but
 deliberately **never gated** — a spend cap must not be the reason a hedge leg
 goes unfilled.
 
+### The header controls
+
+Four things, kept small because the header competes with the board:
+
+| control | what it is |
+|---|---|
+| circular arrow | Refresh. Spins while a scan is in flight. |
+| snail | Slow mode (below). |
+| **Live** + switch | Include games that have already started. |
+| INSTANT BUY OFF/ON | The instant-buy arm/disarm — click it. |
+
+The live control keeps its **word**. Reduced to a bare switch it showed its
+state perfectly and said nothing about what it switched; a toggle with no label
+is unguessable until you press it, which is the wrong way round for a control
+that changes what the board is priced against. Only the long "Include live
+games" phrasing went.
+
+**Instant buy is one control, not two.** There used to be a badge that read the
+state and a Safety chip beside it that set the state — the same fact twice. The
+badge is the button now: click to arm, click to disarm. `safetyOn` is unchanged
+underneath, so the catch behaves exactly as before, and arming still never
+survives a reload — a page that loads already armed turns a stray click into a
+real order.
+
+With the chip gone the badge has to explain itself, so its tooltip names the
+case where releasing the catch still would not arm it: instant buy needs live
+games on and an auto amount above zero, and never applies in the HR view.
+
 ### Slow mode
 
 The **snail** next to Refresh freezes the whole board. Nothing updates on its

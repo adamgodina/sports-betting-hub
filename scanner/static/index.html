@@ -38,7 +38,7 @@
   /* The header is nowrap, so anything inside it that can break onto a second
      line does — "Safety On" split across two rows and pushed the bar taller. */
   .autobox { white-space: nowrap; flex-shrink: 0; }
-  .autobox .autolabel, .instantflag, .chip.safety, .chip.live { white-space: nowrap; }
+  .autobox .autolabel, .instantflag, .chip.live { white-space: nowrap; }
   h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: .2px; }
   h1 span { color: var(--muted); font-weight: 400; }
   .spacer { flex: 1; }
@@ -117,6 +117,14 @@
   .autobox .stakebox { padding: 0 9px; }
   .autobox .stakebox input { width: 58px; padding: 5px 0; font-size: 13.5px; }
   .autolabel { color: var(--muted); font-size: 11.5px; }
+  /* The switch icon: track plus knob, the knob sliding right when on. */
+  .chip.live svg .track { fill: none; stroke: currentColor; stroke-width: 1.8; }
+  .chip.live svg .knob  { fill: currentColor; transition: transform .15s; }
+  .chip.live.on svg .track { fill: currentColor; opacity: .28; stroke: none; }
+  .chip.live.on svg .knob  { transform: translateX(9px); }
+  .instantflag {
+    font-family: inherit; border: 1px solid transparent;
+  }
   .instantflag {
     font-size: 12px; font-weight: 900; letter-spacing: .6px;
     color: #1d0503; background: var(--live); border-radius: 6px;
@@ -135,20 +143,6 @@
     background: none; color: var(--muted); border: 1px dashed var(--border);
     font-weight: 700; letter-spacing: .3px; animation: none;
   }
-  .chip.safety { font-weight: 700; }
-  .chip.safety.on {
-    color: #d6ffe8; border-color: var(--best); background: rgba(46,204,113,.12);
-  }
-  .chip.safety.on .dot { background: var(--best); }
-  .chip.safety:not(.on) {
-    color: #1d0503; border-color: var(--live); background: var(--live);
-    font-weight: 800;
-  }
-  .chip.safety:not(.on) .dot { background: #1d0503; }
-  .chip.safety.on {
-    color: #d6ffe8; border-color: var(--best); background: rgba(46,204,113,.12);
-  }
-  .chip.safety.on .dot { background: var(--best); }
 
   td.cellq .qbtn {
     display: none; position: absolute; inset: 0; margin: auto;
@@ -197,6 +191,17 @@
     padding: 0; width: 34px; height: 34px; justify-content: center; gap: 0;
   }
   .chip.iconchip svg { width: 18px; height: 18px; }
+  /* The live control keeps its word. A bare switch is unguessable — it shows
+     its state perfectly and says nothing about what it switches — so the label
+     stays and only the long "Include live games" phrasing goes. */
+  .chip.live.liveswitch {
+    height: 32px; border-radius: 999px; gap: 5px;
+    padding: 0 5px 0 11px;
+  }
+  .chip.live.liveswitch .swlabel {
+    font-size: 12.5px; font-weight: 700; letter-spacing: .2px;
+  }
+  .chip.live.liveswitch svg { width: 28px; height: 28px; }
 
   .controls {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -639,13 +644,11 @@
       <div id="autoMeta"></div>
     </div>
     <div class="autobox" id="autoBox" hidden>
-      <span class="instantflag armedoff" id="instantFlag">INSTANT BUY OFF</span>
+      <button class="instantflag armedoff" id="instantFlag" type="button"
+        aria-pressed="false"></button>
       <label class="stakebox">$<input id="autoAmt" type="number" min="1"
         step="1" value="50"></label>
       <span class="autolabel">auto amount</span>
-      <span class="chip safety" id="safetyChip"
-        title="Safety is the catch on instant buy. Safety On = one-click buying is disabled; price cells open the normal order ticket. Safety Off = instant buy is live and a single click sends a real order, sized to hedge the auto amount against a freshly read sportsbook line.">
-        <span class="dot"></span><span id="safetyLabel">Safety On</span></span>
     </div>
     <div class="headactions">
       
@@ -656,9 +659,9 @@
            just clicked out from under the cursor. -->
       <span class="chip slow iconchip" id="slowChip" role="button" aria-label="Slow mode"
         title="Slow mode: nothing updates on its own. No sportsbook scans, no exchange polling, no order-book depth — the board holds whatever Refresh last pulled, and spends no Odds API credits until you press Refresh."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="11" r="6"/><circle cx="15" cy="11" r="2.4"/><path d="M15 17H5.6a2.6 2.6 0 0 1 0-5.2H7.1"/><path d="M7.1 11.8V8.2"/><path d="M4.8 12.6 3.1 9.5"/></svg></span>
-      <span class="chip live" id="liveChip"
-        title="Show games that have already started. They re-price fastest, and having one on screen is what puts the board on the 1-second clock.">
-        <span class="dot"></span>Live games</span>
+      <span class="chip live liveswitch" id="liveChip" role="button"
+        aria-label="Include live games"
+        title="Include games that have already started. They re-price fastest, and having one on screen is what puts the board on the 1-second clock."><span class="swlabel">Live</span><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="track" x="2.5" y="7" width="19" height="10" rx="5"/><circle class="knob" cx="7.5" cy="12" r="3.1"/></svg></span>
     </div>
   </header>
 
@@ -1847,7 +1850,6 @@ function applyView() {
   renderSlow();     // owns the Refresh button's visibility
   autoBeat();     // tells the server which market is being billed now
   document.getElementById("instantFlag").hidden = propView;
-  document.getElementById("safetyChip").hidden = propView;
   document.getElementById("autoBox").hidden = propView ? true : !includeLive;
   if (propView && !propData) {
     document.getElementById("tableWrap").innerHTML = slowMode
@@ -1927,16 +1929,32 @@ function instantArmed() {
   return !propView && includeLive && !safetyOn && autoAmount() > 0;
 }
 
+/* The badge and the safety switch were the same fact shown twice — the badge
+   read the state and the chip next to it set it. It is one control now: click
+   the badge to arm or disarm. `safetyOn` is unchanged underneath, so the
+   catch still works exactly as before; only the surface merged. */
 function renderInstantFlag() {
   const el = document.getElementById("instantFlag");
   if (!el) return;
-  // Just the armed state — the reason it is off is already visible next to it
-  // (the Safety chip, or an empty amount box).
   const armed = instantArmed();
   el.textContent = armed ? "INSTANT BUY ON" : "INSTANT BUY OFF";
   el.classList.toggle("armedoff", !armed);
-  const lbl = document.getElementById("safetyLabel");
-  if (lbl) lbl.textContent = safetyOn ? "Safety On" : "Safety Off";
+  el.setAttribute("aria-pressed", armed ? "true" : "false");
+  // With the chip gone, the badge has to explain itself — including the cases
+  // where releasing the catch still would not arm it.
+  el.title = armed
+    ? "Instant buy is LIVE: one click on a green best price sends a real order, "
+      + "sized to hedge the auto amount against a freshly read sportsbook line. "
+      + "Click to disarm."
+    : safetyOn
+      ? "Instant buy is off — price cells open the normal order ticket. "
+        + "Click to arm one-click buying."
+      : !includeLive
+        ? "Disarmed: instant buy only applies to live games. Turn the live "
+          + "switch on first."
+        : autoAmount() > 0
+          ? "Instant buy is off. Click to arm."
+          : "Disarmed: set an auto amount above 0 first.";
 }
 
 function autoAmount() {
@@ -3064,11 +3082,8 @@ liveChip.onclick = () => {
   renderTable();
 };
 
-const safetyChip = document.getElementById("safetyChip");
-safetyChip.onclick = () => {
+document.getElementById("instantFlag").onclick = () => {
   safetyOn = !safetyOn;
-  safetyChip.classList.toggle("on", safetyOn);
-renderInstantFlag();
   try { localStorage.setItem("safetyOn", safetyOn ? "1" : "0"); } catch (e) {}
   renderInstantFlag();
   renderTable(true);
@@ -3094,7 +3109,6 @@ try {
   if (localStorage.getItem("slowMode") === "1") slowMode = true;
 } catch (e) {}
 renderSlow();      // sets the chip and the Refresh button from the restored state
-safetyChip.classList.toggle("on", safetyOn);
 renderInstantFlag();   // must run AFTER the restore above, not before
 
 
