@@ -1800,6 +1800,7 @@ function renderTable(preserveOrder) {
 function renderCountdown() {
   const el = document.getElementById("nextTick");
   if (!el) return;
+  retuneTick();          // catch a tier change the moment it happens
   if (slowMode) {
     const html = `<b>manual</b>`;
     if (html !== lastCountdownHtml) { el.innerHTML = html; lastCountdownHtml = html; }
@@ -3007,7 +3008,7 @@ async function hedgeTradeBoth() {
 /* ---------------- live exchange feed (free APIs, 1/second) ---------------- */
 
 let tickTimer = null, depthTimer = null, lastFeedAt = null, feedErr = 0;
-let nextTickAt = 0, countdownTimer = null;
+let nextTickAt = 0, countdownTimer = null, tickStartedAt = 0;
 let tickGen = 0, tickAbort = null, tickInFlight = false;
 let lastCountdownHtml = "";
 
@@ -3213,9 +3214,31 @@ async function masterTick() {
    the cadence doesn't drift by however long the round trip took. */
 function scheduleTick(started) {
   clearTimeout(tickTimer);      // exactly one chain, whoever calls this
+  tickStartedAt = started;
   const period = tickPeriodNow();
   const wait = (feedErr || scanErr) ? Math.max(3000, period)
                                     : Math.max(0, period - (Date.now() - started));
+  nextTickAt = Date.now() + wait;
+  tickTimer = setTimeout(masterTick, wait);
+}
+
+/* Pull a pending tick forward when the tier gets faster.
+
+   The wait is fixed at the moment a tick is scheduled, so switching to the
+   1-second tier left the board sitting out the remainder of the 10-second one
+   it had already committed to — turn Live on with 5s showing and nothing moved
+   for five more seconds. Re-deriving the deadline against the CURRENT period
+   fixes every cause at once: the live toggle, changing sport, or a game simply
+   kicking off while you watch.
+
+   It only ever brings a tick forward, never pushes it back, so a slowing tier
+   cannot stall one that is nearly due. */
+function retuneTick() {
+  if (!tickTimer || slowMode) return;
+  const due = tickStartedAt + tickPeriodNow();
+  if (due >= nextTickAt) return;
+  clearTimeout(tickTimer);
+  const wait = Math.max(0, due - Date.now());
   nextTickAt = Date.now() + wait;
   tickTimer = setTimeout(masterTick, wait);
 }

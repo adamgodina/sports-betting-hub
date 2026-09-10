@@ -347,6 +347,16 @@ pressed a button; on a shared clock it always read "a second ago". Because
 both halves ride the same tick, one number covers everything on screen, which
 is also why there is no separate "exchange prices: live" indicator any more.
 
+A pending tick is **pulled forward when the tier speeds up**. The wait is fixed
+at the moment a tick is scheduled, so switching to the 1-second tier used to
+leave the board sitting out the remainder of the 10-second one it had already
+committed to — turn Live on with 5s showing and nothing moved for five more
+seconds. The deadline is now re-derived against the current period, which fixes
+every cause at once: the live toggle, changing sport, or a game simply kicking
+off while you watch. Measured: 6.99s remaining, toggle Live, next tick
+rescheduled for 0ms. It only ever brings a tick forward, so a slowing tier
+cannot stall one that is nearly due.
+
 Tenths on the 1s tier, whole seconds on the 10s tier — and **`updating…`**
 whenever a tick is in flight or already overdue. That last state matters: the
 exchange round trip alone is ~0.9s, so on the 1s tier there is almost no idle
