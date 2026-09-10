@@ -13,7 +13,27 @@ from dotenv import load_dotenv
 
 from .teams import MLB_TEAMS
 
-ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+def _find_env() -> Path:
+    """Where the credentials live, most explicit first.
+
+    Secrets are happier outside the working tree: a .env sitting in the repo is
+    safe from git (it is ignored) but not from everything else you might do to
+    a folder — zip it, sync it, share it, point a tool at it. So a config-dir
+    copy wins if it exists, and $ODDS_SCANNER_ENV overrides everything.
+
+    The in-repo .env remains the fallback, so an existing checkout keeps
+    working with no changes.
+    """
+    override = os.environ.get("ODDS_SCANNER_ENV")
+    if override:
+        return Path(override).expanduser()
+    shared = Path.home() / ".config" / "odds-scanner" / ".env"
+    if shared.is_file():
+        return shared
+    return Path(__file__).resolve().parent.parent / ".env"
+
+
+ENV_PATH = _find_env()
 load_dotenv(ENV_PATH)
 
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
@@ -273,8 +293,9 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 def reload_env():
     """Re-read .env so credential edits apply without restarting the server."""
-    global ODDS_API_KEY, KALSHI_API_KEY_ID, KALSHI_PRIVATE_KEY_PATH
+    global ENV_PATH, ODDS_API_KEY, KALSHI_API_KEY_ID, KALSHI_PRIVATE_KEY_PATH
     global POLYMARKET_KEY_ID, POLYMARKET_SECRET_KEY
+    ENV_PATH = _find_env()      # re-resolve: the file may have just moved
     load_dotenv(ENV_PATH, override=True)
     ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
     KALSHI_API_KEY_ID = os.environ.get("KALSHI_API_KEY_ID", "")

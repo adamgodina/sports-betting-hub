@@ -49,10 +49,23 @@ first run and is gitignored, as are `.env` and any `.pem`.
 `.gitignore` covers `.env`, `.env.*`, `*.pem`, `*.key` and `data/`, so nothing
 sensitive is committed by default. Two habits worth keeping anyway:
 
-* **Store the Kalshi `.pem` outside the repo** and point `.env` at it with an
-  absolute path. A private key that lives inside the working tree is one
-  `git add -f`, one `.gitignore` edit, or one careless `zip` away from being
-  shared — and this particular key can place real orders.
+* **Keep the credentials outside the working tree.** `.env` is read from the
+  first of `$ODDS_SCANNER_ENV`, then `~/.config/odds-scanner/.env`, then the
+  repo's own `.env` — so moving it needs no code change and no flag:
+
+  ```bash
+  mkdir -p ~/.config/odds-scanner && chmod 700 ~/.config/odds-scanner
+  mv .env ~/.config/odds-scanner/.env
+  mv .pem ~/.config/odds-scanner/kalshi-private-key.pem
+  chmod 600 ~/.config/odds-scanner/*
+  # then set an ABSOLUTE path in that .env:
+  # KALSHI_PRIVATE_KEY_PATH=/Users/you/.config/odds-scanner/kalshi-private-key.pem
+  ```
+
+  Git already ignores both where they are; this covers everything that is not
+  git — zipping the folder, syncing it, sharing it, or pointing a tool at it.
+  Note the Polymarket secret is a *value inside `.env`*, not a separate file,
+  so moving `.env` is what protects it.
 * **Rotate anything that has ever been committed.** Deleting a secret in a
   later commit does not remove it from history; treat it as public and issue a
   new one.
