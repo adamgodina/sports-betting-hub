@@ -1111,6 +1111,15 @@ exchanges have no such promo.
 through to the boost editor instead left a bonus with no way off at all, and
 offered to stack a boost on top of it.
 
+Unlike the book chips, this control cannot lean on the browser's click counter.
+Acting on the first click **rebuilds the header's DOM** — the name is replaced
+by input fields — and once the node under the pointer has changed, the second
+click of a double is unreliable: it only counted when it happened to land
+inside the new input, so a double-click switched the boost on and straight back
+off. The single-click action is therefore held for 220ms. Nothing has moved on
+screen when the second click arrives, and cancelling a pending action is exact
+where undoing a committed one was guesswork.
+
 ### The maths
 
 With `B` the bonus, `dA` the bonus leg's decimal price and `dB` the hedge's:
@@ -1142,6 +1151,31 @@ not always obvious — the longest price usually wins, but not when the hedge
 back is dreadful. The bonus leg is priced **raw**: a boost is a separate promo
 and books do not let you stack one on a bonus bet. The hedge is a real bet, so
 it takes the best effective price available, boosts and exchange fees included.
+
+### In the hedge calculator
+
+Opening a bonus row loads the plan the board ranked it by, not the cheapest
+pair — otherwise the ticket would show a different trade from the one the row
+advertised. The free leg is fixed at the promo's amount, marked **BONUS**, and
+its stake box is read-only: the amount is set on the book header, not here.
+
+All of that falls out of one place. `legFill()` reports a bonus leg as costing
+**nothing** and paying `stake × (d − 1)` — profit only — so outlay, P&L each
+way and ROI are all correct without touching them individually. The total box
+shows cash at risk rather than adding in a stake that never leaves your pocket,
+and is read-only because bonus mode has one degree of freedom, not two: the
+hedge follows from the promo.
+
+Worked through on a live board — $100 on Southern Utah +1100 at DraftKings,
+hedged at Colorado State −1200 on Hard Rock:
+
+| | |
+|---|---|
+| bonus leg | $100, cost $0 |
+| hedge stake | $1,015.43 |
+| cash at risk | $1,015.43 |
+| if either side wins | **+$84.62** |
+| ROI on cash | 8.33% |
 
 ### What the board shows
 
@@ -1179,6 +1213,16 @@ everything it shows has to fit inside that. Two states did not:
 
 Measured across all three states (idle, editing, applied) at the same 94px:
 no overflow.
+
+### A promo forces a leg
+
+Setting a **boost** pins its book, the same way a bonus bet does — a boost is
+a single promo usable on one leg, so the board forces one leg to come from
+there and releases the pin when the boost is removed.
+
+Only one book can be pinned, so a live bonus outranks a boost: its stake can go
+nowhere else. Clearing the bonus hands the pin back to a boost if one is still
+live, rather than quietly dropping it.
 
 ### One boosted leg per market
 

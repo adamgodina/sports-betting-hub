@@ -425,6 +425,10 @@
   .boosthint .hb { color: var(--arb); font-weight: 700; }
   .boosthint .hn { color: var(--best); font-weight: 700; }
   .boosthint .hk { color: var(--muted); font-weight: 400; margin-left: 1px; }
+  .boosthint .hor { margin: 0 3px; }
+  /* "boost(1) or bonus(2)" is a squeeze at 94px, so the hint runs a touch
+     tighter than the rest of the header rather than being clipped. */
+  .boosthint { font-size: 8.5px; letter-spacing: -.1px; }
   th.bookhead:hover .boosthint { visibility: visible; }
   /* Same strip as the hover hint, so an applied boost costs no column width. */
   .boostmeta {
@@ -610,6 +614,10 @@
   .lockbtn.on { background: var(--accent); color: #06121f; border-color: var(--accent); }
   .legmanual { font-size: 12px; color: var(--muted); font-style: italic;
                text-align: right; max-width: 170px; line-height: 1.35; }
+  .bonustag {
+    background: var(--best); color: #04170c; font-size: 10px; font-weight: 800;
+    border-radius: 5px; padding: 4px 8px; letter-spacing: .4px; white-space: nowrap;
+  }
   .hleg .legqty { flex: 1; font-size: 12.5px; color: var(--muted); }
   .hleg .legqty b { color: var(--text); font-variant-numeric: tabular-nums; }
   .legstats {
@@ -1287,7 +1295,13 @@ function setBonus(book, amt, min) {
     anchorBook = book;               // the free stake can only go here
     selected.add(book);
   } else {
-    if (bonus && anchorBook === bonus.book) anchorBook = null;
+    if (bonus && anchorBook === bonus.book) {
+      // Hand the pin back to a boost if one is still live, rather than
+      // dropping it: the boost is a one-leg promo too, and clearing an
+      // unrelated bonus should not quietly stop forcing it.
+      const boosted = Object.keys(boosts).filter(k => boostOf(k));
+      anchorBook = boosted.length === 1 ? boosted[0] : null;
+    }
     bonus = null;
   }
   try { localStorage.setItem("bonusBet", JSON.stringify(bonus)); } catch (e) {}
@@ -1327,7 +1341,14 @@ function setBoost(book, pct, min) {
   if (pct) boosts[book] = { pct: pct, min: (min == null ? null : min) };
   else delete boosts[book];
   try { localStorage.setItem("boosts", JSON.stringify(boosts)); } catch (e) {}
+  // A boost is a single promo, usable on one leg — the same constraint a bonus
+  // bet has — so setting one forces a leg from that book, and removing it
+  // releases the pin again. A live bonus outranks it: only one book can be
+  // pinned, and the bonus is the one with a stake that can go nowhere else.
+  if (pct) { if (!bonus) anchorBook = book; }
+  else if (anchorBook === book && !bonus) anchorBook = null;
   sortedGames = [];                  // ranking changes, so re-sort from scratch
+  paintChips();
   renderTable();
 }
 
@@ -1390,8 +1411,8 @@ function boostHeadHtml(b) {
   return b.label + (pct
     ? `<span class="boostmeta">+${pct}%${cond}</span>`
     : `<span class="boosthint"><span class="hb">boost</span>` +
-      `<span class="hk">(1)</span> <span class="hn">bonus</span>` +
-      `<span class="hk">(2)</span></span>`);
+      `<span class="hk">(1)</span><span class="hk hor">or</span>` +
+      `<span class="hn">bonus</span><span class="hk">(2)</span></span>`);
 }
 
 function boostHeadClass(b) {
@@ -1400,29 +1421,46 @@ function boostHeadClass(b) {
                                        : (boostOf(b.key) ? " boosted" : ""));
 }
 
-/* One click boosts, two set a bonus bet. The browser's own click counter does
-   the telling apart, the same way the book chips do it — a hand-rolled timer
-   needs a threshold and every threshold is wrong for somebody.
+/* One click boosts, two set a bonus bet.
 
-   The first click of a double has already acted by the time the second
-   arrives, so whatever it did to the boost is undone here before the bonus
-   editor opens. */
-let headPre = null;
+   Unlike the book chips, this one CANNOT lean on the browser's click counter,
+   because acting on the first click rebuilds the header's DOM — the name is
+   replaced by input fields — and once the node under the pointer has changed,
+   the second click of a double is unreliable: it only counted when it happened
+   to land inside the new input, and otherwise arrived as another single click,
+   so a double-click switched the boost on and straight back off.
+
+   So the single-click action is held for HEAD_DBL_MS. Nothing has changed on
+   screen when the second click arrives, which makes it land on the same
+   element the first one did, and cancelling a pending action is exact where
+   undoing a committed one was guesswork. The cost is a barely perceptible
+   delay before the boost editor opens. */
+const HEAD_DBL_MS = 220;
+let headTimer = null;
+
+function headOf(book) {
+  return [...document.querySelectorAll("th.bookhead")]
+    .find(t => t.dataset.book === book) || null;
+}
 
 function headClick(book, th, e) {
-  if (e.detail === 1) {
+  if (e.detail >= 2) {
+    clearTimeout(headTimer); headTimer = null;   // the boost never happened
+    editBonus(book, headOf(book) || th);
+    return;
+  }
+  clearTimeout(headTimer);
+  headTimer = setTimeout(() => {
+    headTimer = null;
+    // The table re-renders every tick, so the header may be a new node by now.
+    const cur = headOf(book);
+    if (!cur) return;
     // A header carrying a bonus bet clears it, the same way a boosted header
     // clears its boost. Falling through to the boost editor instead left the
     // bonus with no way off at all, and offered to stack a boost on top of it.
     if (bonusOn(book)) { setBonus(book, 0); return; }
-    headPre = { book, pct: boostOf(book), min: boostMinOf(book) };
-    editBoost(book, th);
-  } else if (e.detail === 2) {
-    if (headPre && headPre.book === book && headPre.pct)
-      boosts[book] = { pct: headPre.pct, min: headPre.min };
-    boostEditing = false;
-    editBonus(book, th);
-  }
+    editBoost(book, cur);
+  }, HEAD_DBL_MS);
 }
 
 function editBonus(book, th) {
@@ -1722,7 +1760,7 @@ function renderTable(preserveOrder) {
   const keepScroll = (wrap.querySelector(".tablescroll") || {}).scrollLeft || 0;
   wrap.innerHTML = `<div class="tablescroll"><table>
     <thead><tr><th class="stickygame">Game</th><th class="stickyteam">Team</th>
-      ${BOOKS.map(b => `<th class="num${boostHeadClass(b)}"` +
+      ${BOOKS.map(b => `<th class="num${boostHeadClass(b)}" data-book="${b.key}"` +
         (boostable(b.key) ? ` onclick="headClick('${b.key}', this, event)"
            title="${bonusOn(b.key)
              ? `${b.label}: $${bonus.amt} bonus bet — double-click to remove it`
@@ -2550,6 +2588,15 @@ function legContracts(leg) {
    contracts. Sportsbook legs take no rounding — the stake is a dollar bet. */
 function legFill(leg) {
   const q = legQuote(leg);
+  // A bonus bet is free and its stake is NOT returned, so it costs nothing and
+  // pays the profit part alone. Every total downstream — outlay, P&L each way,
+  // ROI — falls out of those two numbers, so this is the only place the
+  // difference has to be expressed. Priced raw, like bonusPlan: promos do not
+  // stack, so a boost must not inflate the free leg.
+  if (leg.bonus) {
+    return { contracts: null, cost: 0, rounded: false,
+             payout: leg.stake * (1 / q.prob - 1) };
+  }
   if (legTradeable(leg) || (EXCHANGES.has(q.book) && q.meta)) {
     const n = legContracts(leg);
     return { contracts: n, cost: n * eProb(q), payout: n, rounded: true };
@@ -2575,12 +2622,29 @@ function openHedge(game) {
   };
   const legs = [mkLeg(game.away), mkLeg(game.home)];
   if (!legs[0].quotes.length || !legs[1].quotes.length) return;
+
+  // With a bonus bet live, open on the plan the board ranked the game by: the
+  // free stake on the leg it chose, at the amount of the promo, fixed — and
+  // the hedge derived from it. Anything else would show a different trade from
+  // the one the row advertised.
+  const bp = a && a.bonus;
+  let note = "stakes split so profit is equal either way";
+  if (bp) {
+    const bi = bp.side === game.away ? 0 : 1;
+    const bq = legs[bi].quotes.indexOf(bp.leg);
+    const hq = legs[1 - bi].quotes.indexOf(bp.hedge);
+    if (bq >= 0) legs[bi].sel = bq;
+    if (hq >= 0) legs[1 - bi].sel = hq;
+    legs[bi].bonus = true;
+    legs[bi].locked = true;              // the promo's amount is not a choice
+    legs[bi].stake = bonus.amt;
+    note = `$${bonus.amt} bonus bet on ${bp.side} — stake is not returned, `
+         + `so the hedge banks $${bp.profit.toFixed(2)} either way`;
+  }
   hedgeCtx = { game, legs };
   document.getElementById("hGame").textContent = game.title
-    ? `${game.title} · ${game.matchup || ""} · ${fmtTime(game.start)} · `
-      + `stakes split so profit is equal either way`
-    : `${game.away} ${game.sep || "@"} ${game.home} · ${fmtTime(game.start)} · `
-      + `stakes split so profit is equal either way`;
+    ? `${game.title} · ${game.matchup || ""} · ${fmtTime(game.start)} · ${note}`
+    : `${game.away} ${game.sep || "@"} ${game.home} · ${fmtTime(game.start)} · ${note}`;
   hedgeRecalc("total");
   renderHedgeLegs();
   document.getElementById("hedgeOverlay").style.display = "flex";
@@ -2623,6 +2687,17 @@ document.getElementById("hedgeOverlay").onclick = e => {
 
 function hedgeRecalc(driver) {
   const [A, B] = hedgeCtx.legs;
+  // Bonus mode has one degree of freedom, not two: the free stake is whatever
+  // the promo is worth, so the hedge is fully determined and the total box
+  // has nothing to drive. s = B(dA-1)/dB — the stake that pays the same
+  // whichever way the game goes, given the bonus stake never comes back.
+  const bi = A.bonus ? 0 : (B.bonus ? 1 : -1);
+  if (bi >= 0) {
+    const bl = hedgeCtx.legs[bi], hl = hedgeCtx.legs[1 - bi];
+    const dA = 1 / legQuote(bl).prob, dB = 1 / eProb(legQuote(hl));
+    hl.stake = (dA > 1 && dB > 1) ? bl.stake * (dA - 1) / dB : 0;
+    return;
+  }
   const pA = eProb(legQuote(A)), pB = eProb(legQuote(B));
   const lock = lockedIndex();          // a fixed leg is never recomputed
   if (driver === "total") {
@@ -2774,13 +2849,16 @@ function renderHedgeLegs() {
       </div>
       <div class="botrow">
         <label class="stakebox">$<input id="hStake${i}" type="number" min="0" step="0.01"
-               value="${leg.stake.toFixed(2)}"
+               value="${leg.stake.toFixed(2)}" ${leg.bonus ? "readonly" : ""}
+               title="${leg.bonus ? "The bonus bet's amount — set on the book header, not here" : ""}"
                oninput="hedgeStakeChange(${i}, this)"></label>
-        <button class="lockbtn ${leg.locked ? "on" : ""}" onclick="hedgeToggleLock(${i})"
+        ${leg.bonus
+          ? `<span class="bonustag" title="Free stake, not returned on a win">BONUS</span>`
+          : `<button class="lockbtn ${leg.locked ? "on" : ""}" onclick="hedgeToggleLock(${i})"
           title="${leg.locked
             ? "This stake is fixed — typing on the other side won't move it. Click to unlock."
             : "Fix this stake, then set the other side freely to see the P&L of an uneven hedge."}"
-          >${leg.locked ? "🔒 fixed" : "🔓 fix"}</button>
+          >${leg.locked ? "🔒 fixed" : "🔓 fix"}</button>`}
         <span class="legqty" id="hQty${i}">${legQtyHtml(leg)}</span>
         ${legActionHtml(leg, i)}
       </div>
@@ -2800,7 +2878,16 @@ function updateHedgeTotals() {
   const pnlB = fB.payout - cost;
   const worst = Math.min(pnlA, pnlB);
 
-  document.getElementById("hTotal").value = (A.stake + B.stake).toFixed(2);
+  // In bonus mode the only real money is the hedge, so the total box shows
+  // that rather than adding in a stake that never leaves your pocket — and it
+  // is read-only, because the sizing follows from the promo, not from a total.
+  const bonusLeg = A.bonus || B.bonus;
+  const tot = document.getElementById("hTotal");
+  tot.value = (bonusLeg ? cost : A.stake + B.stake).toFixed(2);
+  tot.readOnly = !!bonusLeg;
+  tot.title = bonusLeg
+    ? "Cash at risk. With a bonus bet the sizing follows from the promo amount."
+    : "";
   document.getElementById("hCost").textContent = "$" + cost.toFixed(2);
 
   const money = v => (v >= 0 ? "+$" : "\u2212$") + Math.abs(v).toFixed(2);
