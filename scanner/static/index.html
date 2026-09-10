@@ -410,6 +410,7 @@
   th.bookhead { cursor: pointer; transition: background .12s, color .12s; }
   th.bookhead:hover { color: var(--text); }
   th.bookhead.boosted { background: var(--arb); color: #211a00; }
+  th.bookhead.bonused { background: var(--best); color: #04170c; }
   th.bookhead {
     position: relative; padding-bottom: 15px;
     overflow: hidden; text-overflow: ellipsis;
@@ -1240,6 +1241,83 @@ function boostQualifies(q, book) {
   return q.prob <= p + 1e-9;         // at or longer than the minimum
 }
 
+/* ---------------- bonus bets ----------------
+
+   A bonus bet is a free stake that does NOT come back when it wins: a $100
+   bonus at +200 pays $200, not $300. So its whole value is the profit leg, and
+   the way to bank it is to place it on the longest price you can, hedge the
+   other side with real money, and keep the difference.
+
+   Writing dA and dB for the decimal prices of the bonus leg and the hedge, and
+   B for the bonus amount:
+
+       if the bonus leg wins   B(dA - 1) - s
+       if the hedge leg wins   s·dB - s
+
+   Setting those equal (a perfect hedge, same money either way) gives
+
+       s      = B(dA - 1) / dB
+       profit = B(dA - 1)(dB - 1) / dB
+
+   The bonus itself costs nothing, so `profit` is the raw, guaranteed extraction
+   and profit/B is the conversion rate — never 100%, but a long bonus leg
+   against a tight hedge gets close to 70%.
+
+   Only one bonus bet is live at a time, and setting it PINS its book, because
+   the free stake can only be placed there. */
+let bonus = null;                    // { book, amt, min }
+
+function bonusOn(book) { return !!bonus && bonus.book === book && bonus.amt > 0; }
+
+/* Same minimum-price condition as a boost: the leg must be at or longer. */
+function bonusQualifies(q) {
+  if (!bonus || bonus.min == null || bonus.min === "") return true;
+  const p = americanToProb(bonus.min);
+  return p == null ? true : q.prob <= p + 1e-9;
+}
+
+function setBonus(book, amt, min) {
+  if (amt > 0) {
+    bonus = { book, amt, min: (min == null ? null : min) };
+    anchorBook = book;               // the free stake can only go here
+    selected.add(book);
+  } else {
+    if (bonus && anchorBook === bonus.book) anchorBook = null;
+    bonus = null;
+  }
+  try { localStorage.setItem("bonusBet", JSON.stringify(bonus)); } catch (e) {}
+  sortedGames = [];                  // ranking changes, so re-sort from scratch
+  paintChips();
+  renderTable();
+}
+
+/* The best way to bank the bonus on this game, or null.
+
+   Both sides are priced, because which one to put the free stake on is not
+   obvious: the longest price is usually right, but not when the hedge back is
+   dreadful. The bonus leg uses the RAW price — a boost is a separate promo and
+   books do not let you stack one on a bonus bet — while the hedge is a real
+   bet, so it takes the best effective price going, boosts and exchange fees
+   included. */
+function bonusPlan(game) {
+  if (!bonus || !(bonus.amt > 0) || !selected.has(bonus.book)) return null;
+  let best = null;
+  for (const side of [game.away, game.home]) {
+    const leg = quoteFor(game, bonus.book, side);
+    if (!leg || !(leg.prob > 0) || !bonusQualifies(leg)) continue;
+    const other = side === game.away ? game.home : game.away;
+    const hedge = bestFor(game, other);
+    if (!hedge) continue;
+    const dA = 1 / leg.prob, dB = 1 / eProb(hedge);
+    if (!(dA > 1) || !(dB > 1)) continue;
+    const stake = bonus.amt * (dA - 1) / dB;
+    const profit = stake * (dB - 1);
+    if (!best || profit > best.profit)
+      best = { leg, side, hedge, other, stake, profit, rate: profit / bonus.amt };
+  }
+  return best;
+}
+
 function setBoost(book, pct, min) {
   if (pct) boosts[book] = { pct: pct, min: (min == null ? null : min) };
   else delete boosts[book];
@@ -1299,6 +1377,11 @@ function boostHeadHtml(b) {
   // The boost details go on the SECOND line, in the same strip the hover hint
   // uses. On one line the header read "DraftKings+40% ≥+100clear" inside a
   // 94px column and simply ran off the end.
+  if (bonusOn(b.key)) {
+    const bm = (bonus.min == null || bonus.min === "") ? "" :
+      ` \u2265${parseFloat(bonus.min) > 0 ? "+" : ""}${bonus.min}`;
+    return b.label + `<span class="boostmeta">BB $${bonus.amt}${bm}</span>`;
+  }
   return b.label + (pct
     ? `<span class="boostmeta">+${pct}%${cond}</span>`
     : `<span class="boosthint">boost</span>`);
@@ -1306,7 +1389,65 @@ function boostHeadHtml(b) {
 
 function boostHeadClass(b) {
   if (!boostable(b.key)) return "";
-  return " bookhead" + (boostOf(b.key) ? " boosted" : "");
+  return " bookhead" + (bonusOn(b.key) ? " bonused"
+                                       : (boostOf(b.key) ? " boosted" : ""));
+}
+
+/* One click boosts, two set a bonus bet. The browser's own click counter does
+   the telling apart, the same way the book chips do it — a hand-rolled timer
+   needs a threshold and every threshold is wrong for somebody.
+
+   The first click of a double has already acted by the time the second
+   arrives, so whatever it did to the boost is undone here before the bonus
+   editor opens. */
+let headPre = null;
+
+function headClick(book, th, e) {
+  if (e.detail === 1) {
+    headPre = { book, pct: boostOf(book), min: boostMinOf(book) };
+    editBoost(book, th);
+  } else if (e.detail === 2) {
+    if (headPre && headPre.book === book && headPre.pct)
+      boosts[book] = { pct: headPre.pct, min: headPre.min };
+    boostEditing = false;
+    editBonus(book, th);
+  }
+}
+
+function editBonus(book, th) {
+  if (bonusOn(book)) { setBonus(book, 0); return; }   // already set -> clear it
+  boostEditing = true;                                // freeze re-renders
+  th.classList.add("bonused");
+  th.title = `Bonus bet at ${bookLabel(book)}`;
+  th.innerHTML =
+    `<input class="boostinput" type="number" min="0" step="5" placeholder="$" ` +
+    `title="bonus bet amount" aria-label="bonus bet amount">` +
+    `<span class="boostsep">\u2265</span>` +
+    `<input class="boostinput bmin" type="number" step="5" placeholder="any" ` +
+    `title="minimum American price the bonus leg must be at or longer than" ` +
+    `aria-label="minimum odds">`;
+  const [amtInp, minInp] = th.querySelectorAll("input");
+  amtInp.focus();
+  let closed = false;
+  const finish = apply => {
+    if (closed) return;
+    closed = true;
+    boostEditing = false;
+    if (!apply) { sortedGames = []; renderTable(); return; }
+    const amt = Math.max(0, parseFloat(amtInp.value) || 0);
+    const raw = minInp.value.trim();
+    const mn = raw === "" ? null : parseFloat(raw);
+    setBonus(book, amt, (mn == null || !isFinite(mn)) ? null : mn);
+  };
+  const key = e => {
+    if (e.key === "Enter") finish(true);
+    else if (e.key === "Escape") finish(false);
+  };
+  amtInp.onkeydown = key; minInp.onkeydown = key;
+  const blur = () => setTimeout(() => {
+    if (!th.contains(document.activeElement)) finish(true);
+  }, 0);
+  amtInp.onblur = blur; minInp.onblur = blur;
 }
 
 function editBoost(book, th) {
@@ -1396,7 +1537,8 @@ function analyze(game) {
   }
   if (!ba || !bh) return null;
   const sum = eProb(ba) + eProb(bh);
-  return { ba, bh, sum, roi: sum < 1 ? (1 / sum - 1) * 100 : 0 };
+  return { ba, bh, sum, roi: sum < 1 ? (1 / sum - 1) * 100 : 0,
+           bonus: bonusPlan(game) };
 }
 
 // Kalshi and Polymarket US both sell WHOLE contracts only — never fractional.
@@ -1482,9 +1624,18 @@ function renderTable(preserveOrder) {
   // Rank by combined price, cheapest (best) first, with a deterministic
   // tiebreak. Without the tiebreak two games on the same number could swap
   // places every tick for no reason a reader could see.
-  const rank = (x, y) => (x.a ? x.a.sum : 9) - (y.a ? y.a.sum : 9)
-    || new Date(x.g.start) - new Date(y.g.start)
-    || (gameKey(x.g) < gameKey(y.g) ? -1 : 1);
+  // With a bonus bet live, the question the board answers changes: not "where
+  // is the thinnest market" but "where does the free stake bank the most". So
+  // it ranks by raw winnings, highest first, and games the bonus cannot be
+  // placed on fall to the bottom.
+  const rank = bonus
+    ? (x, y) => ((y.a && y.a.bonus ? y.a.bonus.profit : -1)
+               - (x.a && x.a.bonus ? x.a.bonus.profit : -1))
+        || new Date(x.g.start) - new Date(y.g.start)
+        || (gameKey(x.g) < gameKey(y.g) ? -1 : 1)
+    : (x, y) => (x.a ? x.a.sum : 9) - (y.a ? y.a.sum : 9)
+        || new Date(x.g.start) - new Date(y.g.start)
+        || (gameKey(x.g) < gameKey(y.g) ? -1 : 1);
   if (preserveOrder && sortedGames.length) {
     // Hold the order you are aiming at. Keyed by gameKey, NOT by object
     // identity: a scan swaps every game object, so an identity map missed
@@ -1499,7 +1650,9 @@ function renderTable(preserveOrder) {
     // enough to open one. So the hold applies WITHIN a class, not across it:
     // arbs are always above non-arbs, and nothing shuffles inside either
     // group, which is what stops a button moving out from under a click.
-    const cls = x => (x.a && x.a.sum < 1) ? 0 : 1;
+    const cls = bonus
+      ? x => (x.a && x.a.bonus) ? 0 : 1        // placeable bonus outranks the hold
+      : x => (x.a && x.a.sum < 1) ? 0 : 1;
     analyzed.sort((x, y) => {
       const c = cls(x) - cls(y);
       if (c) return c;
@@ -1529,7 +1682,16 @@ function renderTable(preserveOrder) {
   let rows = "";
   analyzed.forEach(({ g, a, live }, gi) => {
     const isArb = a && a.sum < 1;
-    const sumCell = a
+    const bp = a && a.bonus;
+    // With a bonus bet live the headline figure is the money it banks, since
+    // that is the whole point of the row; the vig sits underneath it.
+    const sumCell = bp
+      ? `<td class="sumcell bonuscell" rowspan="2">
+           <div class="sumv">$${bp.profit.toFixed(2)}</div>
+           <div class="roi">${(bp.rate * 100).toFixed(0)}% of bonus</div>
+           <div class="roi">${((a.sum - 1) * 100).toFixed(2)}% vig</div>
+           <span class="placebtn" data-hgi="${gi}">Place order</span></td>`
+      : a
       ? `<td class="sumcell" rowspan="2">
            <div class="sumv">${isArb ? "+" + a.roi.toFixed(2) + "%" : ((a.sum - 1) * 100).toFixed(2) + "%"}</div>
            <div class="roi">${isArb ? "ROI" : "vig"}</div>
@@ -1550,10 +1712,14 @@ function renderTable(preserveOrder) {
   wrap.innerHTML = `<div class="tablescroll"><table>
     <thead><tr><th class="stickygame">Game</th><th class="stickyteam">Team</th>
       ${BOOKS.map(b => `<th class="num${boostHeadClass(b)}"` +
-        (boostable(b.key) ? ` onclick="editBoost('${b.key}', this)"
-           title="${boostOf(b.key)
-             ? `${b.label} is boosted +${boostOf(b.key)}% — click to remove it`
-             : `Click to set a profit boost for ${b.label}`}"` : "") +
+        (boostable(b.key) ? ` onclick="headClick('${b.key}', this, event)"
+           title="${bonusOn(b.key)
+             ? `${b.label}: $${bonus.amt} bonus bet — double-click to remove it`
+             : boostOf(b.key)
+               ? `${b.label} is boosted +${boostOf(b.key)}% — click to remove it. `
+                 + `Double-click to set a bonus bet instead.`
+               : `Click to set a profit boost for ${b.label}, `
+                 + `double-click for a bonus bet.`}"` : "") +
         `>${boostHeadHtml(b)}</th>`).join("")}
       <th class="num stickybest">Best</th>
       <th class="num stickyvig">Vig</th></tr></thead>
@@ -1864,7 +2030,11 @@ function applyNav() {
   if (propView !== wasProps) {
     // a promo belongs to one market, so it doesn't follow you across tabs
     boosts = {};
-    try { localStorage.removeItem("boosts"); } catch (e) {}
+    bonus = null;    // and it must go with them: applyNav clears anchorBook
+                     // below, which would otherwise leave a bonus bet live
+                     // with its book no longer pinned
+    try { localStorage.removeItem("boosts"); localStorage.removeItem("bonusBet"); }
+    catch (e) {}
   }
   anchorBook = null;   // and neither does a pinned book
   // one sport on screen at a time, which also scopes the live poll
@@ -3139,6 +3309,8 @@ try {
     document.getElementById("autoBox").hidden = false;
   }
   if (localStorage.getItem("slowMode") === "1") slowMode = true;
+  const bb = JSON.parse(localStorage.getItem("bonusBet") || "null");
+  if (bb && bb.book && bb.amt > 0) { bonus = bb; anchorBook = bb.book; }
 } catch (e) {}
 renderSlow();      // sets the chip and the Refresh button from the restored state
 renderInstantFlag();   // must run AFTER the restore above, not before

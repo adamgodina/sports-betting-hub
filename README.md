@@ -1093,6 +1093,68 @@ conditional ("must be +100 or greater"). A boosted header reads
 `FanDuel +50% ≥+100`. Legs shorter than the minimum simply don't qualify and
 stay at their raw price.
 
+## Bonus bets
+
+A bonus bet is a free stake that does **not** come back when it wins: $100 at
++200 pays $200, not $300. All its value is in the profit leg, so the way to
+bank it is to put it on the longest price you can, hedge the other side with
+real money, and keep the difference.
+
+**Double-click a book's column header** to set one (single click is still a
+boost). Two fields: the amount, and an optional minimum price the bonus leg
+must be at or longer than. Setting one **pins that book**, because the free
+stake can only be placed there. Sportsbooks only — the exchanges have no such
+promo. Double-click again to clear it.
+
+### The maths
+
+With `B` the bonus, `dA` the bonus leg's decimal price and `dB` the hedge's:
+
+```
+if the bonus leg wins   B(dA - 1) - s        ← stake is NOT returned
+if the hedge leg wins   s·dB - s
+```
+
+Equal payouts either way gives the stake and the guaranteed profit:
+
+```
+s      = B(dA - 1) / dB
+profit = B(dA - 1)(dB - 1) / dB
+```
+
+The bonus costs nothing, so `profit` is raw extraction and `profit / B` is the
+conversion rate. It can never reach 100%. A long leg against a tight hedge gets
+close:
+
+| bonus | bonus leg | hedge | stake | banked | rate |
+|---|---|---|---|---|---|
+| $100 | +150 | −170 | $94.44 | $55.56 | 55.6% |
+| $100 | +200 | −200 | $133.33 | $66.67 | 66.7% |
+| $100 | +1100 | −1200 | $1015.43 | $84.62 | 84.6% |
+
+Both sides of every game are priced, because which side takes the free stake is
+not always obvious — the longest price usually wins, but not when the hedge
+back is dreadful. The bonus leg is priced **raw**: a boost is a separate promo
+and books do not let you stack one on a bonus bet. The hedge is a real bet, so
+it takes the best effective price available, boosts and exchange fees included.
+
+### What the board shows
+
+With a bonus live the board answers a different question — not "where is the
+thinnest market" but "where does the free stake bank the most" — so it **ranks
+by raw winnings**, highest first, with games the bonus cannot be placed on at
+the bottom. The Vig column leads with the money:
+
+```
+$84.62
+85% of bonus
+0.64% vig
+```
+
+Like a boost, a bonus belongs to one market and is cleared when you switch —
+which it has to be, since switching also clears the pin, and a live bonus whose
+book was no longer pinned would be quietly wrong.
+
 ### A boost has to fit its column
 
 Book columns are a fixed 94px, and the boost control lives in the header, so
