@@ -178,13 +178,25 @@
   .toastmsg { white-space: pre-line; font-variant-numeric: tabular-nums; }
   .toastmsg:first-line { font-weight: 800; }
 
-  #scanBtn {
-    background: var(--accent); color: #06121f; border: 0; border-radius: 8px;
-    padding: 10px 22px; font-size: 14.5px; font-weight: 700; cursor: pointer;
-    transition: filter .15s;
+  /* Icon-only, to buy back header width. The label lives in the tooltip and
+     in aria-label, so the meaning is still reachable. */
+  .iconbtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; padding: 0;
+    background: var(--accent); color: #06121f; border: 0; border-radius: 9px;
+    cursor: pointer; transition: filter .15s;
   }
-  #scanBtn:hover { filter: brightness(1.12); }
-  #scanBtn:disabled { opacity: .55; cursor: wait; }
+  .iconbtn svg { width: 19px; height: 19px; }
+  .iconbtn:hover { filter: brightness(1.12); }
+  .iconbtn:disabled { opacity: .55; cursor: wait; }
+  /* The icon spins while a scan is in flight — the button used to swap its
+     text to "Scanning…", which would now wipe the icon out of the DOM. */
+  #scanBtn.busy svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .chip.iconchip {
+    padding: 0; width: 34px; height: 34px; justify-content: center; gap: 0;
+  }
+  .chip.iconchip svg { width: 18px; height: 18px; }
 
   .controls {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -285,6 +297,11 @@
   #autoMeta.warn { color: var(--live); }
 
   .rowbtns { margin-left: auto; display: flex; gap: 8px; flex: 0 0 auto; }
+  .chip.slow.on {
+    color: #06121f; border-color: var(--accent); background: var(--accent);
+    font-weight: 700;
+  }
+  .chip.slow.on .dot { background: #06121f; }
   .chip.live.on {
     color: #ffd9d6; border-color: var(--live); background: rgba(255,91,82,.14);
   }
@@ -632,11 +649,13 @@
     </div>
     <div class="headactions">
       
-      <button id="scanBtn" onclick="doScan()"
-        title="Pull fresh sportsbook odds for every enabled sport — this spends 1 Odds API credit per sport. Exchange prices update on their own.">Refresh</button>
+      <button id="scanBtn" class="iconbtn" onclick="doScan()" aria-label="Refresh"
+        title="Refresh — pull fresh sportsbook odds. 1 Odds API credit per sport."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4"/><path d="M20.5 3.2v5.6h-5.6"/></svg></button>
       <!-- Live games sits LAST so it keeps the same spot when Refresh hides
            itself; with the order reversed, toggling live slid the chip you had
            just clicked out from under the cursor. -->
+      <span class="chip slow iconchip" id="slowChip" role="button" aria-label="Slow mode"
+        title="Slow mode: nothing updates on its own. No sportsbook scans, no exchange polling, no order-book depth — the board holds whatever Refresh last pulled, and spends no Odds API credits until you press Refresh."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="11" r="6"/><circle cx="15" cy="11" r="2.4"/><path d="M15 17H5.6a2.6 2.6 0 0 1 0-5.2H7.1"/><path d="M7.1 11.8V8.2"/><path d="M4.8 12.6 3.1 9.5"/></svg></span>
       <span class="chip live" id="liveChip"
         title="Show games that have already started. They re-price fastest, and having one on screen is what puts the board on the 1-second clock.">
         <span class="dot"></span>Live games</span>
@@ -752,6 +771,11 @@ let anchorBook = null;
 let selected = new Set(BOOKS.map(b => b.key));
 let sportsOn = null;          // null = all; otherwise a Set of sport keys
 let includeLive = false;
+/* Slow mode: the whole board freezes and only Refresh moves it. Every loop
+   checks this — the paid scan, the free exchange poll, the heartbeat that
+   authorises spending, and the depth poll — so "nothing updates on its own"
+   means exactly that rather than "the expensive half is off". */
+let slowMode = false;
 let data = null;
 let trading = { kalshi: { configured: false }, polymarket_us: { configured: false } };
 const VENUE_LABEL = { kalshi: "Kalshi", polymarket_us: "Polymarket" };
@@ -1403,7 +1427,8 @@ function renderTable(preserveOrder) {
   if (!data || !data.games) {
     summary.textContent = "";
     wrap.innerHTML = `<div id="empty">No data yet — hit <b>Refresh</b> to pull odds.<br>
-      <small>(each scan uses 1 Odds API credit per sport)</small></div>`;
+      <small>1 Odds API credit per sport.${slowMode
+        ? " Slow mode is on, so nothing updates until you do." : ""}</small></div>`;
     return;
   }
   const now = Date.now();
@@ -1525,6 +1550,11 @@ function renderTable(preserveOrder) {
 function renderCountdown() {
   const el = document.getElementById("nextTick");
   if (!el) return;
+  if (slowMode) {
+    const html = `<b>manual</b> — press Refresh`;
+    if (html !== lastCountdownHtml) { el.innerHTML = html; lastCountdownHtml = html; }
+    return;
+  }
   const period = tickPeriodNow();
   const left = (nextTickAt - Date.now()) / 1000;
   // A tick that is in flight, or one already overdue, has no time left to
@@ -1814,14 +1844,17 @@ function applyView() {
   // Refresh is the manual all-sports pull. With live games on screen the board
   // is already re-scanning the visible sport every second, so the button is
   // noise there — it comes back the moment live games are off.
-  document.getElementById("scanBtn").hidden = propView || includeLive;
+  renderSlow();     // owns the Refresh button's visibility
   autoBeat();     // tells the server which market is being billed now
   document.getElementById("instantFlag").hidden = propView;
   document.getElementById("safetyChip").hidden = propView;
   document.getElementById("autoBox").hidden = propView ? true : !includeLive;
   if (propView && !propData) {
-    document.getElementById("tableWrap").innerHTML =
-      `<div id="empty">Loading 1+ home run props…</div>`;
+    document.getElementById("tableWrap").innerHTML = slowMode
+      ? `<div id="empty">1+ home run props aren't loaded.<br>
+         <small>Slow mode is on — press <b>Refresh</b> to pull them
+         (<b>1 Odds API credit per game</b>).</small></div>`
+      : `<div id="empty">Loading 1+ home run props…</div>`;
     document.getElementById("summary").textContent = "";
   }
   if (propView) {
@@ -2852,7 +2885,7 @@ async function masterTick() {
     if (gen === tickGen) {
       tickAbort = null;
       renderAuto();
-      scheduleTick(started);
+      if (!slowMode) scheduleTick(started);   // a manual tick does not re-arm
     }
   }
 }
@@ -2930,8 +2963,9 @@ async function depthTick() {
     }
   } catch (e) { /* depth is a nice-to-have; prices keep flowing */ }
   // the scheduler itself wakes every second and only fetches what is due
-  depthTimer = setTimeout(depthTick,
-    Math.max(0, DEPTH_THIN_MS - (Date.now() - started)));
+  if (!slowMode)
+    depthTimer = setTimeout(depthTick,
+      Math.max(0, DEPTH_THIN_MS - (Date.now() - started)));
 }
 
 function mergeDepth(games, payload) {
@@ -2969,20 +3003,31 @@ function refreshDerived() {
 async function doScan() {
   const btn = document.getElementById("scanBtn");
   const err = document.getElementById("error");
-  btn.disabled = true; btn.textContent = "Scanning…"; err.style.display = "none";
+  btn.disabled = true; btn.classList.add("busy"); err.style.display = "none";
   try {
-    const r = await fetch("/api/scan", { method: "POST" });
+    // In the HR view the manual pull is the props scan — otherwise Refresh
+    // would replace the board with moneyline games.
+    const r = propView
+      ? await fetch("/api/scan_props", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ auto: false }) })
+      : await fetch("/api/scan", { method: "POST" });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || r.statusText);
-    carryExchangeQuotes(data, j);   // keep live exchange prices across the swap
-    data = j; mlData = j;
-    renderMeta(); applyView();
-    tickNow();                  // re-poll exchanges immediately
+    if (propView) { propData = j; propQuota = j.quota; }
+    else { carryExchangeQuotes(data, j); mlData = j; }
+    data = j;
+    renderMeta();
+    // applyView() already fires a catch-up tick, and in slow mode masterTick
+    // runs once without rescheduling, so that is a pull rather than restarting
+    // the clock. Calling tickNow() again here just superseded its own request.
+    applyView();
+    if (slowMode && !propView) await depthTick();
   } catch (e) {
     err.textContent = "Refresh failed: " + e.message;
     err.style.display = "block";
   } finally {
-    btn.disabled = false; btn.textContent = "Refresh";
+    btn.disabled = false; btn.classList.remove("busy");
   }
 }
 
@@ -3013,7 +3058,7 @@ liveChip.onclick = () => {
   includeLive = !includeLive;
   liveChip.classList.toggle("on", includeLive);
   document.getElementById("autoBox").hidden = !includeLive;
-  document.getElementById("scanBtn").hidden = propView || includeLive;
+  renderSlow();     // owns the Refresh button's visibility
   try { localStorage.setItem("includeLive", includeLive ? "1" : "0"); } catch (e) {}
   renderInstantFlag();
   renderTable();
@@ -3045,9 +3090,10 @@ try {
     includeLive = true;
     liveChip.classList.add("on");
     document.getElementById("autoBox").hidden = false;
-    document.getElementById("scanBtn").hidden = true;
   }
+  if (localStorage.getItem("slowMode") === "1") slowMode = true;
 } catch (e) {}
+renderSlow();      // sets the chip and the Refresh button from the restored state
 safetyChip.classList.toggle("on", safetyOn);
 renderInstantFlag();   // must run AFTER the restore above, not before
 
@@ -3126,7 +3172,7 @@ async function autoPost(action, extra) {
    switch. */
 async function autoBeat() {
   clearTimeout(autoBeatTimer);
-  const here = !document.hidden &&
+  const here = !document.hidden && !slowMode &&
                (Date.now() - lastInputAt) <= (autoCfg.idle_stop_s || 1800) * 1000;
   if (here) {
     try {
@@ -3171,13 +3217,45 @@ window.addEventListener("pagehide", () => {
              { type: "application/json" }));
 });
 
-function startFeeds() {
-  if (!tickTimer) masterTick();
-  if (!autoBeatTimer) autoBeat();
-  if (!countdownTimer) countdownTimer = setInterval(renderCountdown, 100);
-  if (!depthTimer) depthTimer = setTimeout(depthTick, 250);
+function toggleSlow() {
+  slowMode = !slowMode;
+  try { localStorage.setItem("slowMode", slowMode ? "1" : "0"); } catch (e) {}
+  if (slowMode) {
+    // stop everything in flight, and tell the server to stop authorising spend
+    clearTimeout(tickTimer); tickTimer = null;
+    clearTimeout(depthTimer); depthTimer = null;
+    tickGen++;                                  // orphan any tick mid-flight
+    if (tickAbort) { tickAbort.abort(); tickAbort = null; }
+    tickInFlight = false;
+    autoOn = false;
+    autoPost("stop", { reason: "slow mode" }).then(j => { autoCfg = j; renderAuto(); })
+                                             .catch(() => {});
+  } else {
+    lastInputAt = Date.now();
+    startFeeds();
+    tickNow();                                  // catch up immediately
+  }
+  renderSlow();
+  renderCountdown();
 }
 
+function renderSlow() {
+  document.getElementById("slowChip").classList.toggle("on", slowMode);
+  // Refresh is the ONLY way to update in slow mode, so it can never be the
+  // button that hides itself — it is normally tucked away while the board is
+  // re-scanning on its own, and that reason is gone here.
+  document.getElementById("scanBtn").hidden =
+    slowMode ? false : (propView || includeLive);
+}
+
+function startFeeds() {
+  if (!tickTimer && !slowMode) masterTick();
+  if (!autoBeatTimer) autoBeat();
+  if (!countdownTimer) countdownTimer = setInterval(renderCountdown, 100);
+  if (!depthTimer && !slowMode) depthTimer = setTimeout(depthTick, 250);
+}
+
+document.getElementById("slowChip").onclick = toggleSlow;
 document.getElementById("allOnBtn").onclick = () => {
   selected = new Set(bookOrder);
   afterBookChange(false);

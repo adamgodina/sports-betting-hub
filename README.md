@@ -239,6 +239,26 @@ Sizing a hedge (`fresh_sportsbook_price`) is counted against the day but
 deliberately **never gated** — a spend cap must not be the reason a hedge leg
 goes unfilled.
 
+### Slow mode
+
+The **snail** next to Refresh freezes the whole board. Nothing updates on its
+own — no sportsbook scans, no exchange polling, no order-book depth — and the
+heartbeat stops, so the server stops authorising spend too. The board holds
+whatever Refresh last pulled, and **Refresh becomes the only thing that moves
+it**. Measured: zero API calls over nine idle seconds, against five per four
+seconds live; one press then makes exactly one scan plus a catch-up poll and
+stops again.
+
+It is global and it persists, so it survives a reload. Refresh is normally
+tucked away while the board re-scans itself; in slow mode it can never hide,
+because it is the only way to update. In the HR view it pulls props rather than
+moneylines, so a manual refresh means the right thing in every market.
+
+Both controls are icon-only to buy back header width — a circular arrow and a
+snail, with the wording in the tooltip and `aria-label`. The refresh icon spins
+while a scan is in flight; the button used to swap its text to "Scanning…",
+which would now delete the icon from the DOM.
+
 ### Row order holds still while you aim at it
 
 The board re-ranks by combined price, cheapest first. That is useful and also
