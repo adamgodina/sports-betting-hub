@@ -39,14 +39,15 @@
      what right-aligns this whole group, so it has to live on whichever of the
      two comes first on screen — the box when it is showing, the countdown when
      it is not. */
-  /* The instant-buy box is anchored LEFT, straight after the nav. It used to
-     be pushed right, which meant the countdown next to it — whose text swings
-     between "manual", "updating…" and "update in 1.6s" — shoved the box a few
-     pixels left and right every tick. Nothing sits between the nav and the box
-     now, so it cannot move; only the controls at the far right are pinned to
-     the opposite edge. */
-  header .meta { flex-shrink: 0; }
-  .headactions { margin-left: auto; }
+  /* The instant-buy box is anchored LEFT, straight after the nav, so nothing
+     sits between the two and it cannot move. It used to be pushed right, where
+     the countdown beside it — text swinging between "manual", "updating…" and
+     "update in 1.6s" — shoved it a few pixels every tick.
+     The auto margin therefore lives on the COUNTDOWN, which keeps it and the
+     controls after it pinned to the right edge, and still works when the box
+     is hidden. */
+  header .meta { flex-shrink: 0; margin-left: auto; }
+  .autobox { margin-left: 18px; }   /* breathing room off the nav */
   /* The header is nowrap, so anything inside it that can break onto a second
      line does — "Safety On" split across two rows and pushed the bar taller. */
   .autobox { white-space: nowrap; flex-shrink: 0; }
