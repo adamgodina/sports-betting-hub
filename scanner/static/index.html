@@ -34,7 +34,14 @@
      to push the bar onto a second line now shrinks it. */
   header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
            margin-bottom: 14px; }
-  header .meta { margin-left: auto; flex-shrink: 0; }
+  /* The countdown sits to the RIGHT of the instant-buy box, so with live games
+     on you read the bubble first and the clock after it. The auto margin is
+     what right-aligns this whole group, so it has to live on whichever of the
+     two comes first on screen — the box when it is showing, the countdown when
+     it is not. */
+  header .meta { flex-shrink: 0; }
+  .autobox { margin-left: auto; }
+  .autobox[hidden] + .meta { margin-left: auto; }
   /* The header is nowrap, so anything inside it that can break onto a second
      line does — "Safety On" split across two rows and pushed the bar taller. */
   .autobox { white-space: nowrap; flex-shrink: 0; }
@@ -639,16 +646,16 @@
       <div class="navrow"><span class="navlbl">Market</span>
         <div class="navsubs" id="navSubs"></div></div>
     </div>
-    <div class="meta">
-      <div id="nextTick">—</div>
-      <div id="autoMeta"></div>
-    </div>
     <div class="autobox" id="autoBox" hidden>
       <button class="instantflag armedoff" id="instantFlag" type="button"
         aria-pressed="false"></button>
       <label class="stakebox">$<input id="autoAmt" type="number" min="1"
         step="1" value="50"></label>
       <span class="autolabel">auto amount</span>
+    </div>
+    <div class="meta">
+      <div id="nextTick">—</div>
+      <div id="autoMeta"></div>
     </div>
     <div class="headactions">
       
