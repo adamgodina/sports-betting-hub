@@ -1100,11 +1100,16 @@ A bonus bet is a free stake that does **not** come back when it wins: $100 at
 bank it is to put it on the longest price you can, hedge the other side with
 real money, and keep the difference.
 
-**Double-click a book's column header** to set one (single click is still a
-boost). Two fields: the amount, and an optional minimum price the bonus leg
-must be at or longer than. Setting one **pins that book**, because the free
-stake can only be placed there. Sportsbooks only — the exchanges have no such
-promo. Double-click again to clear it.
+**Double-click a book's column header** to set one; a single click is still a
+boost. Hovering a header spells it out: `boost(1) bonus(2)`, each word coloured
+like the state it produces. Two fields: the amount, and an optional minimum
+price the bonus leg must be at or longer than. Setting one **pins that book**,
+because the free stake can only be placed there. Sportsbooks only — the
+exchanges have no such promo.
+
+**One more click removes it**, exactly as a click clears a boost. Falling
+through to the boost editor instead left a bonus with no way off at all, and
+offered to stack a boost on top of it.
 
 ### The maths
 
@@ -1151,9 +1156,11 @@ $84.62
 0.64% vig
 ```
 
-Like a boost, a bonus belongs to one market and is cleared when you switch —
-which it has to be, since switching also clears the pin, and a live bonus whose
-book was no longer pinned would be quietly wrong.
+Unlike a boost, a bonus **follows you between markets**. It is a balance on an
+account, not a property of one game list, so it survives switching sport or
+market — and its pin has to survive with it. Clearing the pin on a switch while
+leaving the bonus set left it half-applied: still priced, but no longer forced
+onto the book you can actually place it at.
 
 ### A boost has to fit its column
 

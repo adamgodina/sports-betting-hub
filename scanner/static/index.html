@@ -417,9 +417,14 @@
   }
   .boosthint {
     position: absolute; left: 0; right: 0; bottom: 3px; text-align: center;
-    visibility: hidden; font-size: 9px; font-weight: 700;
-    color: var(--arb); text-transform: none; letter-spacing: 0;
+    visibility: hidden; font-size: 9px; text-transform: none; letter-spacing: 0;
+    white-space: nowrap;
   }
+  /* Each action is coloured like the state it produces — yellow for a boost,
+     green for a bonus bet — and the click counts stay quiet beside them. */
+  .boosthint .hb { color: var(--arb); font-weight: 700; }
+  .boosthint .hn { color: var(--best); font-weight: 700; }
+  .boosthint .hk { color: var(--muted); font-weight: 400; margin-left: 1px; }
   th.bookhead:hover .boosthint { visibility: visible; }
   /* Same strip as the hover hint, so an applied boost costs no column width. */
   .boostmeta {
@@ -1384,7 +1389,9 @@ function boostHeadHtml(b) {
   }
   return b.label + (pct
     ? `<span class="boostmeta">+${pct}%${cond}</span>`
-    : `<span class="boosthint">boost</span>`);
+    : `<span class="boosthint"><span class="hb">boost</span>` +
+      `<span class="hk">(1)</span> <span class="hn">bonus</span>` +
+      `<span class="hk">(2)</span></span>`);
 }
 
 function boostHeadClass(b) {
@@ -1404,6 +1411,10 @@ let headPre = null;
 
 function headClick(book, th, e) {
   if (e.detail === 1) {
+    // A header carrying a bonus bet clears it, the same way a boosted header
+    // clears its boost. Falling through to the boost editor instead left the
+    // bonus with no way off at all, and offered to stack a boost on top of it.
+    if (bonusOn(book)) { setBonus(book, 0); return; }
     headPre = { book, pct: boostOf(book), min: boostMinOf(book) };
     editBoost(book, th);
   } else if (e.detail === 2) {
@@ -2028,15 +2039,16 @@ function applyNav() {
   const wasProps = propView;
   propView = !!sub.props;
   if (propView !== wasProps) {
-    // a promo belongs to one market, so it doesn't follow you across tabs
+    // a boost belongs to one market, so it doesn't follow you across tabs
     boosts = {};
-    bonus = null;    // and it must go with them: applyNav clears anchorBook
-                     // below, which would otherwise leave a bonus bet live
-                     // with its book no longer pinned
-    try { localStorage.removeItem("boosts"); localStorage.removeItem("bonusBet"); }
-    catch (e) {}
+    try { localStorage.removeItem("boosts"); } catch (e) {}
   }
   anchorBook = null;   // and neither does a pinned book
+  // ...unless a bonus bet is live. A bonus is a balance on an account, not a
+  // property of one market, so it follows you between sports — and its pin has
+  // to follow with it. Clearing the pin here while leaving the bonus set left
+  // it quietly half-applied: still priced, no longer forced onto its book.
+  if (bonus) anchorBook = bonus.book;
   // one sport on screen at a time, which also scopes the live poll
   sportsOn = sub.sport ? new Set([sub.sport]) : null;
   renderNav();
