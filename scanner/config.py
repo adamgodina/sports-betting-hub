@@ -276,7 +276,11 @@ HEDGE_QUOTE_TTL_S = 5.0
 # and to not re-fetch one you already have. Props barely move, so a scan result
 # is reused for this long — a repeat scan inside the window is free.
 PROPS_CACHE_TTL_S = 300.0
-PROPS_TOP_PER_GAME = 3      # keep only the N likeliest hitters per game
+# 0 = every player the books price. This was 3 back when props were being
+# rationed by hand; it never saved a credit (the credit is spent per GAME, so
+# the whole slate of players arrives in the same response) and it hid most of
+# the board. Set it to a positive number to trim the table again.
+PROPS_TOP_PER_GAME = 0
 
 # Which Odds API market key(s) to read the 1+ HR line from. The books split
 # across two keys and EACH key costs its own credit per game:

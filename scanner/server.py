@@ -266,16 +266,23 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
         elif self.path == "/api/scan_props":
-            # 1+ home run scanner. Costs 1 Odds API credit PER GAME (the
-            # sportsbook half is only on the per-event endpoint), so the caller
-            # says how many games to cover.
+            # 1+ home run scanner, on the same footing as every other view: it
+            # refreshes itself and covers the whole slate. It is still the
+            # expensive one — the sportsbook half only exists on the per-event
+            # endpoint, so it bills 1 credit PER GAME rather than 1 per sport —
+            # which is why the estimate is the real game count (read from the
+            # FREE /events endpoint) and goes through the same gate as
+            # everything else instead of a hand-set limit.
             try:
                 req = self._read_body()
+                auto = bool(req.get("auto"))
                 n = req.get("max_events")
                 top = req.get("top_per_game")
-                budget.gate(estimate=int(n or 5), auto=False)
+                n = int(n) if n else None
+                estimate = n or len(props.list_events()) or 1
+                budget.gate(estimate=estimate, auto=auto)
                 rows, quota = props.scan(
-                    max_events=int(n) if n else None,
+                    max_events=n,
                     top_per_game=int(top) if top else None)
                 budget.note_spend(quota, estimate=int(quota.get("credits_spent") or 0))
                 # same payload shape as /api/scan so the UI renders it with the

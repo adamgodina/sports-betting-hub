@@ -249,6 +249,7 @@ def scan(max_events: int = None, top_per_game: int = None):
     """
     if top_per_game is None:
         top_per_game = config.PROPS_TOP_PER_GAME
+    top_per_game = top_per_game or 0          # 0 / None = keep every player
     kalshi = fetch_kalshi_hr()
     try:
         pmarket = fetch_polymarket_hr()

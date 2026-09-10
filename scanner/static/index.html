@@ -97,13 +97,6 @@
   }
   .nsub:hover { color: var(--text); background: rgba(255,255,255,.04); }
   .nsub.on { color: var(--text); background: rgba(77,163,255,.18); }
-  #propScanBtn {
-    background: var(--accent); color: #06121f; border: 0; border-radius: 8px;
-    padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
-  }
-  #propScanBtn:disabled { opacity: .55; cursor: wait; }
-  #propGamesBox[hidden] { display: none !important; }
-  #propGamesBox input { width: 38px; text-align: right; }
   .propbuy {
     display: block; width: 100%; margin-top: 6px; padding: 5px 8px;
     font-size: 11px; font-weight: 800; border-radius: 6px; cursor: pointer;
@@ -638,12 +631,7 @@
         <span class="dot"></span><span id="safetyLabel">Safety On</span></span>
     </div>
     <div class="headactions">
-      <label class="stakebox" id="propGamesBox" hidden
-        title="How many games to cover. This is the ONLY thing that changes the credit cost — 1 credit per game. Games already scanned in the last few minutes are reused for free.">
-        <input id="propGames" type="number" min="1" max="15" step="1" value="5">
-        <span class="autolabel">&nbsp;games</span></label>
-      <button id="propScanBtn" hidden onclick="scanProps(this)"
-        title="Scan 1+ home run props. 1 Odds API credit per game; recently scanned games are free.">Scan HR props</button>
+      
       <button id="scanBtn" onclick="doScan()"
         title="Pull fresh sportsbook odds for every enabled sport — this spends 1 Odds API credit per sport. Exchange prices update on their own.">Refresh</button>
       <!-- Live games sits LAST so it keeps the same spot when Refresh hides
@@ -811,7 +799,6 @@ function mlBooks() {
 }
 
 function saveBookLayout() {
-  if (propView) return;                   // props derives its own row
   try {
     localStorage.setItem("bookLayout", JSON.stringify({
       order: bookOrder, hidden: bookHidden,
@@ -857,11 +844,10 @@ function renderChips() {
   const row = document.getElementById("chips");
   const tray = document.getElementById("hiddenChips");
   row.innerHTML = ""; tray.innerHTML = "";
-  for (const b of (propView ? BOOKS : mlBooks()))
+  for (const b of mlBooks())
     row.appendChild(chipNode(b.key, b.label, false));
-  if (!propView)
-    for (const k of bookHidden) tray.appendChild(chipNode(k, bookLabel(k), true));
-  document.getElementById("hiddenRow").hidden = propView || !bookHidden.length;
+  for (const k of bookHidden) tray.appendChild(chipNode(k, bookLabel(k), true));
+  document.getElementById("hiddenRow").hidden = !bookHidden.length;
   wireChips(row, false);
   wireChips(tray, true);
   paintChips();
@@ -1129,7 +1115,7 @@ function pinBook(k) {
 }
 
 function afterBookChange(structural) {
-  if (!propView) BOOKS = mlBooks();
+  BOOKS = mlBooks();
   if (structural) renderChips(); else paintChips();
   saveBookLayout();
   renderTable();
@@ -1601,38 +1587,9 @@ function esc(t) {
    A "1+ HR" prop is a two-outcome market, so the server hands it back in the
    SAME game shape as a moneyline and everything below renders it with the
    ordinary table, order ticket and hedge calculator. The only differences are
-   the book columns (a book that posts the market, plus both exchanges) and
-   that instant buy is switched off — this is not a live-trading view. */
+   that instant buy is switched off — this is not a live-trading view. The book
+   row, the clock and the refresh are all the shared ones. */
 let propData = null, propQuota = null, propView = false, mlData = null;
-
-function booksForProps() {
-  const seen = (propQuota && propQuota.books_seen) || [];
-  return seen.map(k => ({ key: k, label: bookLabel(k) }))
-    .concat([{ key: "kalshi", label: "Kalshi" },
-             { key: "polymarket_us", label: "Polymarket" }]);
-}
-
-async function scanProps(btn) {
-  btn.disabled = true;
-  const was = btn.textContent;
-  btn.textContent = "Scanning…";
-  try {
-    const r = await fetch("/api/scan_props", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        max_events: parseInt(document.getElementById("propGames").value) || 5,
-      }),
-    });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || r.statusText);
-    propData = j; propQuota = j.quota;
-    if (propView) applyView();
-  } catch (e) {
-    toast("HR prop scan failed: " + e.message, "err");
-  } finally {
-    btn.disabled = false; btn.textContent = was;
-  }
-}
 
 /* ---------------- navigation ----------------
    Two levels: a sport picks the family, a subcategory picks the market within
@@ -1836,39 +1793,32 @@ function applyNav() {
 /* Point the shared state at whichever dataset the current view uses, rebuild
    the book columns to match, then render with the normal renderer. */
 function applyView() {
-  document.getElementById("propScanBtn").hidden = !propView;
-  document.getElementById("propGamesBox").hidden = !propView;
   // Refresh is the manual all-sports pull. With live games on screen the board
   // is already re-scanning the visible sport every second, so the button is
   // noise there — it comes back the moment live games are off.
   document.getElementById("scanBtn").hidden = propView || includeLive;
-  // The continuous scan is a moneyline feature: HR props bill per GAME, so
-  // running it here would cost dozens of credits a second. autoBeat() sends
-  // the current sport, and sends nothing at all in the props view.
-  autoBeat();
-  document.getElementById("liveChip").hidden = propView;
+  autoBeat();     // tells the server which market is being billed now
   document.getElementById("instantFlag").hidden = propView;
   document.getElementById("safetyChip").hidden = propView;
   document.getElementById("autoBox").hidden = propView ? true : !includeLive;
   if (propView && !propData) {
     document.getElementById("tableWrap").innerHTML =
-      `<div id="empty">1+ home run props aren't loaded.<br>
-       <small>Hit <b>Scan HR props</b> — <b>1 Odds API credit per game</b>;
-       games scanned in the last few minutes are reused free.</small></div>`;
+      `<div id="empty">Loading 1+ home run props…</div>`;
     document.getElementById("summary").textContent = "";
-    return;
   }
   if (propView) {
-    BOOKS = booksForProps();
-    selected = new Set(BOOKS.map(b => b.key));
+    // The HR view used to build its own book row out of whatever the props
+    // feed happened to return. That made it the one page where the row was
+    // not yours: dragging there wrote prop book keys into the global order and
+    // corrupted the moneyline row, and there was no Hidden tray to drop into.
+    // It is the same seven books either way, so it is now the same row —
+    // a book with no line on a given player just reads "—", exactly as it does
+    // for a game it has not priced.
     data = propData;
   } else {
-    // back to moneylines: restore the row you arranged, not the default one
-    BOOKS = mlBooks();
-    loadBookLayout();
-    BOOKS = mlBooks();
     data = mlData;
   }
+  BOOKS = mlBooks();
   sortedGames = [];
   renderChips();
   renderMeta();
@@ -2780,10 +2730,12 @@ async function fetchExchanges(signal) {
 }
 
 async function fetchSportsbooks(signal) {
-  const r = await fetch("/api/scan", {
+  // The HR view is just another market now: same tick, same clock, no button.
+  const r = await fetch(propView ? "/api/scan_props" : "/api/scan", {
     signal,
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sports: autoSports(), auto: true }),
+    body: JSON.stringify(propView ? { auto: true }
+                                  : { sports: autoSports(), auto: true }),
   });
   const j = await r.json();
   if (!r.ok) { j._httpFail = true; }
@@ -2791,7 +2743,16 @@ async function fetchSportsbooks(signal) {
 }
 
 function tickPeriodNow() {
-  return autoOn ? tickPeriod() : (autoCfg.idle_interval_s || 10) * 1000;
+  const base = autoOn ? tickPeriod() : (autoCfg.idle_interval_s || 10) * 1000;
+  if (!propView) return base;
+  // Props bill 1 credit PER GAME, not 1 per sport, so a full slate is 5-15x a
+  // moneyline tick. Rather than pick a cadence by hand, take the slower of the
+  // normal tier and whatever the per-minute ceiling actually affords: the
+  // cadence then follows the slate size on its own, and refreshing can never
+  // be the thing that empties the budget.
+  const perTick = (propQuota && propQuota.events_scanned) || 5;
+  const cap = autoCfg.per_min_cap || 90;
+  return Math.max(base, Math.ceil(perTick * 60000 / cap));
 }
 
 async function masterTick() {
@@ -2816,14 +2777,31 @@ async function masterTick() {
   tickInFlight = true;
 
   try {
-    const jobs = [fetchExchanges(ctl.signal).catch(e => ({ _err: e }))];
-    if (autoOn) jobs.push(fetchSportsbooks(ctl.signal).catch(e => ({ _err: e })));
+    // Fixed positions, so a skipped half does not shift the other one.
+    //
+    // The HR view skips the exchange poll entirely. It cannot help there: the
+    // poll matches games by team, and a prop row's teams are "1+ HR"/"No HR",
+    // so nothing ever matched. Meanwhile the props scan fetches Kalshi and
+    // Polymarket fresh on every call itself (only the sportsbook half is
+    // cached), so the exchange prices are already live. Running it anyway cost
+    // ELEVEN SECONDS a tick — with no sport scope in that view it fanned out
+    // across all seven — which is what pinned the countdown on "updating…".
+    const jobs = [
+      propView ? Promise.resolve(null)
+               : fetchExchanges(ctl.signal).catch(e => ({ _err: e })),
+      autoOn ? fetchSportsbooks(ctl.signal).catch(e => ({ _err: e }))
+             : Promise.resolve(null),
+    ];
     const [feed, scan] = await Promise.all(jobs);
     if (gen !== tickGen) return;        // superseded mid-flight; drop the data
 
     if (scan && !scan._err && !scan._httpFail) {
       carryExchangeQuotes(data, scan);
-      data = scan; mlData = scan;
+      // one tick, two possible payloads — keep them in their own slots so
+      // switching market does not show the other view's rows
+      if (scan.quota) { propData = scan; propQuota = scan.quota; }
+      else { mlData = scan; }
+      data = scan;
       if (scan.budget) autoCfg = scan.budget;
       scanErr = 0;
     } else if (scan && scan.blocked) {
@@ -2952,7 +2930,9 @@ function mergeDepth(games, payload) {
 }
 
 function refreshDerived() {
-  if (propView) return;   // the HR view has its own data; don't overwrite it
+  // The HR view used to bail out here, because its data came from a manual
+  // scan and the live feed would have wiped it. It rides the shared tick now,
+  // so bailing meant its table never re-rendered at all.
   if (boostEditing) return;   // never re-render while a boost is being typed
   // Re-rank live. While the cursor is over the table (or a ticket is open) hold
   // the current order so a Place order button can't jump out from under it.
@@ -3123,7 +3103,7 @@ async function autoPost(action, extra) {
    switch. */
 async function autoBeat() {
   clearTimeout(autoBeatTimer);
-  const here = !document.hidden && !propView &&
+  const here = !document.hidden &&
                (Date.now() - lastInputAt) <= (autoCfg.idle_stop_s || 1800) * 1000;
   if (here) {
     try {

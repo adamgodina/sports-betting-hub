@@ -847,85 +847,47 @@ from current book odds rather than the last snapshot.
 
 ## 1+ home runs (the HR tab)
 
-A different shape from moneylines, because the two sides of the bet live on
-different venues:
+Just another market. Same wheel, same book row, same clock, same order ticket,
+same hedge calculator — it refreshes itself like every other view and there is
+nothing to press. It used to be the odd one out (a **Scan HR props** button, a
+"how many games" box capped at 15, three players per game, no auto-refresh, and
+its own bespoke book row) purely because props are billed differently. All of
+that is gone.
 
-- **Sportsbooks quote only "Over 0.5 home runs"** (= 1+ HR). There is no Under
-  to buy — a game returns Over outcomes at point 0.5 and **zero** Unders. So a
-  book cannot hedge itself.
+What remains genuinely different is the billing, and it is handled rather than
+worked around:
 
-  **Mind the market key.** The books split across two of them, and each bills
-  its own credit per game:
+* **1 credit per GAME, not per sport.** The sportsbook half of a prop only
+  exists on the per-event endpoint, so a five-game slate is five credits a
+  scan against one for a moneyline refresh.
+* **The cadence follows the cost.** The tick period is the slower of the normal
+  tier and whatever `AUTO_MAX_CREDITS_PER_MIN` actually affords for the current
+  slate size, so it paces itself as the slate grows instead of needing a
+  hand-set limit.
+* **A scan is reused for `PROPS_CACHE_TTL_S` (5 min).** In practice this does
+  most of the rationing: repeat ticks inside the window report
+  `credits_spent: 0`, so a whole slate costs ~1 credit/minute rather than the
+  arithmetic above.
+* **No instant buy.** Deliberate, and the one intentional difference left —
+  this view is not for one-click trading.
 
-  | key | carries |
-  |---|---|
-  | `batter_home_runs` | BetRivers only |
-  | `batter_home_runs_alternate` | **DraftKings and FanDuel** (plus books we don't use) |
+Two things had to be fixed to make it behave like the rest:
 
-  Querying only the first makes it look like DraftKings and FanDuel don't offer
-  home run props at all. `PROPS_HR_MARKETS` defaults to the **alternate** key.
-  Results are filtered to `ODDS_API_BOOKMAKERS` like every other scan, so the
-  HR tab shows the same four columns as the moneyline tab.
-- **Kalshi's `KXMLBHR` series** has `<Player>: 1+ home runs?` with a **Yes and
-  a No** side, and covers the whole slate (verified: 15/15 games, 100 players
-  with a buyable No).
-- **Polymarket US has them too** — `baseball_player_home_runs` with `line: 1`,
-  slug `astatc-mlb-<away>-<home>-<date>-hr-<player>-gte1`, with a buyable No
-  side. **They are only visible via `/v1/events?slug=<game>`**, which returns
-  ~459 markets per game; the `/v2/leagues/mlb/events` feed truncates to the 15
-  team markets and shows no props, which is easy to misread as no coverage.
-  Polymarket actually covers *more* players than Kalshi (174 vs 100).
+`refreshDerived()` used to bail out early in this view, because props data came
+from a manual scan and the live feed would have wiped it. Once props rode the
+shared tick, that early return meant the table never re-rendered at all.
 
-Both venues are scanned and each row hedges on whichever No side is cheaper
-after fees (Polymarket's 0.06 coefficient usually beats Kalshi's 0.07). Rows
-where only one venue lists the player still work.
+The tick also skipped the exchange poll here — or rather, it should have. That
+poll matches games by team, and a prop row's teams are `1+ HR` / `No HR`, so
+nothing ever matched; and with no sport scope in this view it fanned out across
+all seven sports, costing **11 seconds a tick** and pinning the countdown on
+`updating…`. It is skipped now, which is safe because the props scan fetches
+Kalshi and Polymarket fresh on every call itself — only the sportsbook half is
+cached.
 
-**No instant buy in this view.** The armed badge and safety catch are hidden
-here and every hedge asks for confirmation naming the player, venue, contracts,
-cost and payout before anything is sent.
-
-The trade is therefore: back 1+ HR at a book, hedge with **No on an exchange**.
-Those are the two sides of one binary event, so the usual arithmetic holds —
-`book_yes + kalshi_no < 1` is an arbitrage, and the equal-payout hedge size is
-`stake / book_implied_probability` contracts.
-
-**The HR view is the moneyline view.** A 1+ HR prop is just a two-outcome
-market, so the server returns it in the same game shape (`away` = "1+ HR",
-`home` = "No HR", the player as the row title) and it renders through the same
-table, the same **Place order** ticket, the same hedge calculator, the same
-cell-click order modal and the same fill confirmation. Only two things differ:
-the book columns rebuild to whichever sportsbook posts the market plus both
-exchanges, and **instant buy is switched off** — this is not a live-trading
-view, so there is no armed badge, no safety catch and no bolt buttons.
-
-Buying the No side is routed per venue: Kalshi as `side: "ask"` (selling YES at
-`1 - price`), Polymarket as the short side of the market. Both sweep
-`HEDGE_MAX_SLIPPAGE_CENTS` through the touch like any other hedge.
-
-### Credit cost — and what actually reduces it
-
-The sportsbook half only exists on The Odds API's per-event endpoint, which
-bills **1 credit per game**. That one call returns *every* player in the game,
-so **filtering to fewer lines per game saves nothing** — the credit is spent on
-the game, not the row. Two things genuinely reduce spend:
-
-1. **Scan fewer games.** The `games` box next to *Scan HR props* caps how many
-   are covered. This is the only real lever.
-2. **Don't re-fetch.** Each game's props are cached for
-   `PROPS_CACHE_TTL_S` (5 min), so a repeat scan is free and widening from 5
-   games to 8 bills only the 3 new ones. Verified: a second identical scan
-   spent **0 credits**, and 5→8 games spent exactly **3**.
-
-`PROPS_TOP_PER_GAME` (default 3) keeps only the likeliest hitters per game by
-shortest book price. That is presentation — it declutters the table, it does
-not save credits.
-
-The summary line reports exactly what happened: *"3 games · 0 credits spent,
-3 reused free · top 3/game"*.
-
-Note the vig here is brutal (sums of 1.02–1.06 are typical), so genuine arbs
-will be rare — the tab's real use is sizing and firing the hedge quickly once
-you have taken a book price.
+Live games are shown here like anywhere else. Hiding the chip meant every
+started game was silently filtered out with no way to bring it back, which is
+backwards for a market that matters most once the first pitch is thrown.
 
 ## The order ticket (primary flow)
 
