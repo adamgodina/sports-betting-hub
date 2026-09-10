@@ -129,6 +129,12 @@
     color: #1d0503; background: var(--live); border-radius: 6px;
     padding: 5px 10px; white-space: nowrap;
     animation: instantpulse 1.6s ease-in-out infinite;
+    /* Sized for the LONGER of the two labels ("OFF") and centred, so toggling
+       instant buy changes colour and wording but never width. It used to carry
+       a ⚡ when armed, and that extra glyph was enough to push the header onto
+       a second line at the moment you most want the bar to stay still. */
+    display: inline-block; box-sizing: border-box;
+    min-width: 136px; text-align: center;
   }
   @keyframes instantpulse { 0%,100% { opacity: 1 } 50% { opacity: .62 } }
   .instantflag[hidden], .chip[hidden] { display: none !important; }
@@ -1926,7 +1932,7 @@ function renderInstantFlag() {
   // Just the armed state — the reason it is off is already visible next to it
   // (the Safety chip, or an empty amount box).
   const armed = instantArmed();
-  el.textContent = armed ? "⚡ INSTANT BUY ON" : "INSTANT BUY OFF";
+  el.textContent = armed ? "INSTANT BUY ON" : "INSTANT BUY OFF";
   el.classList.toggle("armedoff", !armed);
   const lbl = document.getElementById("safetyLabel");
   if (lbl) lbl.textContent = safetyOn ? "Safety On" : "Safety Off";
