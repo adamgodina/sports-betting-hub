@@ -273,7 +273,7 @@ The **snail** next to Refresh freezes the whole board. Nothing updates on its
 own — no sportsbook scans, no exchange polling, no order-book depth — and the
 heartbeat stops, so the server stops authorising spend too. The board holds
 whatever Refresh last pulled, and **Refresh becomes the only thing that moves
-it**. Measured: zero API calls over nine idle seconds, against five per four
+it**, and the header just reads `manual`. Measured: zero API calls over nine idle seconds, against five per four
 seconds live; one press then makes exactly one scan plus a catch-up poll and
 stops again.
 

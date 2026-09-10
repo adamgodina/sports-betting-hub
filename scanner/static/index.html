@@ -1554,7 +1554,7 @@ function renderCountdown() {
   const el = document.getElementById("nextTick");
   if (!el) return;
   if (slowMode) {
-    const html = `<b>manual</b> — press Refresh`;
+    const html = `<b>manual</b>`;
     if (html !== lastCountdownHtml) { el.innerHTML = html; lastCountdownHtml = html; }
     return;
   }
