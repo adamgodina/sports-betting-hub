@@ -277,11 +277,18 @@ def _event_props(session, pc, event_id):
                 if not key:
                     continue
                 prob = american_to_prob(float(o["price"]))
-                cur = best.get(key)
+                # Every book's price, not just the shortest. One credit buys
+                # the whole game from every book at once, so keeping only the
+                # best threw away ~80% of what had already been paid for — and
+                # left the DraftKings and FanDuel columns looking empty when in
+                # fact they price every player. It also quietly broke boosts
+                # and bonus bets here, since both need their own book's price
+                # on the row to have anything to apply to.
+                e = best.setdefault(key, {"player": player, "books": {}})
+                cur = e["books"].get(bk["key"])
                 if cur is None or prob < cur["prob"]:
-                    best[key] = {"player": player, "book": bk["key"],
-                                 "american": f"{float(o['price']):+.0f}",
-                                 "prob": prob}
+                    e["books"][bk["key"]] = {
+                        "american": f"{float(o['price']):+.0f}", "prob": prob}
     meta = {"away": d.get("away_team"), "home": d.get("home_team"),
             "start": d.get("commence_time"),
             "books": sorted({b["key"] for b in d.get("bookmakers", [])}),
@@ -328,7 +335,10 @@ def scan(pc, max_events: int = None, top_per_game: int = None):
             if not meta.get("cached"):
                 billed += len(pc.odds_api_markets)       # 1 credit per market
         # keep the likeliest hitters in this game (highest book probability)
-        keep = sorted(book_best.items(), key=lambda kv: -kv[1]["prob"])
+        # rank a game's players by their best available price
+        def _best_prob(e):
+            return min((v["prob"] for v in e["books"].values()), default=1.0)
+        keep = sorted(book_best.items(), key=lambda kv: -_best_prob(kv[1]))
         game_rows = 0
         for key, b in keep:
             if top_per_game and game_rows >= top_per_game:
@@ -351,13 +361,21 @@ def scan(pc, max_events: int = None, top_per_game: int = None):
                     if config.INCLUDE_POLYMARKET_US_FEES else pm_no
                 opts.append(("polymarket_us", pm_no, eff))
             venue, raw_no, no_prob = min(opts, key=lambda o: o[2])
-            total = b["prob"] + no_prob
+            if not b["books"]:
+                continue
+            top_book = min(b["books"].items(), key=lambda kv: kv[1]["prob"])
+            total = top_book[1]["prob"] + no_prob
             rows.append({
                 "player": b["player"],
                 "away": ev.get("away_team"), "home": ev.get("home_team"),
                 "start": ev.get("commence_time"),
-                "book": b["book"], "book_american": b["american"],
-                "book_prob": round(b["prob"], 5),
+                # every book that priced this player, so the row has a real
+                # column per book the way a moneyline row does
+                "books": {k: {"american": v["american"],
+                              "prob": round(v["prob"], 5)}
+                          for k, v in b["books"].items()},
+                "book": top_book[0], "book_american": top_book[1]["american"],
+                "book_prob": round(top_book[1]["prob"], 5),
                 "kalshi_ticker": k["ticker"] if k else None,
                 "kalshi_exchange_index": (k or {}).get("exchange_index", -1),
                 "kalshi_yes": (k or {}).get("yes_ask"),
@@ -408,7 +426,8 @@ def to_games(rows, pc):
             q.append({"book": book, "team": team, "prob": round(prob, 5),
                       "american": _american(prob), "detail": detail, "meta": meta})
 
-        add(r["book"], yes_team, r["book_prob"], None, r["book_american"])
+        for bk, bv in (r.get("books") or {}).items():
+            add(bk, yes_team, bv["prob"], None, bv["american"])
 
         if r.get("kalshi_ticker"):
             ki = r.get("kalshi_exchange_index", -1)

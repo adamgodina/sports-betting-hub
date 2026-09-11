@@ -956,6 +956,23 @@ The scan cache is keyed by **(prop, event)**. The same NFL game is a different
 fetch for touchdowns than for any other prop, and one shared slot would serve
 one market's prices under another's name.
 
+### Every book, not just the best one
+
+One credit buys a whole game **from every book at once**, so a prop row carries
+a real column per book exactly as a moneyline row does.
+
+It did not always. `_event_props` used to keep a single entry per player —
+whichever book posted the longest price — and throw the rest away. Measured on
+two MLB games: **89 book quotes fetched, 18 kept, 71 discarded.** DraftKings
+and FanDuel priced 18 of 18 players in both games and showed up on almost none
+of the rows, because Fanatics won most of them on price. The columns looked
+empty; the data was there and paid for.
+
+Worse, it quietly broke the promos in these views. A boost or a bonus bet needs
+its own book's price on the row to have anything to apply to, and for most
+players that price had been dropped. Both work here now: a DraftKings boost
+lands on all 15 top rows, and a FanDuel bonus bet finds a plan on 230 of 230.
+
 ### Everything else is the same
 
 Just another market. Same wheel, same book row, same clock, same order ticket,
