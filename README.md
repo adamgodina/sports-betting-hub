@@ -925,7 +925,38 @@ are frozen at the last **Refresh**, so that assumed price is what the contract
 count is derived from — press Refresh (~250ms) if you want the size computed
 from current book odds rather than the last snapshot.
 
-## 1+ home runs (the HR tab)
+## Player props (1+ HR, 1+ TD)
+
+Two prop views today, and they are one scanner: everything that differs
+between a prop and the next lives in `config.PROP_MARKETS`, so adding a third
+is an entry there rather than a second module.
+
+| | 1+ HR | 1+ TD |
+|---|---|---|
+| sport | MLB | NFL |
+| Odds API market | `batter_home_runs_alternate` | `player_anytime_td` |
+| outcome kept | `Over` at 0.5 | `Yes`, no point |
+| Kalshi series | `KXMLBHR` | `KXNFLTD` |
+| Polymarket type | `baseball_player_home_runs` | `football_player_touchdowns` |
+| horizon | 36h (~25 games) | 120h (~14 games) |
+
+The market key is the whole game, and it differs per sport. Home runs split
+across two keys, only one of which carries DraftKings and FanDuel. Touchdowns
+have a single key that carries six of the seven books — ESPN BET posts them
+only under `player_tds_over`, the same bet at a second credit per game, so it
+is left out by default.
+
+**The horizon is a cost dial here, not a cosmetic one.** Each game returned is
+a credit the scan will spend, and the free events endpoint hands back the whole
+*season* for football: 212 NFL games, which is 212 credits and a board full of
+fixtures a fortnight away that no exchange has priced. 120 hours brings that to
+one week's slate.
+
+The scan cache is keyed by **(prop, event)**. The same NFL game is a different
+fetch for touchdowns than for any other prop, and one shared slot would serve
+one market's prices under another's name.
+
+### Everything else is the same
 
 Just another market. Same wheel, same book row, same clock, same order ticket,
 same hedge calculator — it refreshes itself like every other view and there is

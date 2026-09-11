@@ -221,8 +221,9 @@ def gate(estimate: int = 1, auto: bool = False):
                 f"keeps {config.AUTO_MIN_PLAN_REMAINING} in reserve")
         if _rate_per_min() + estimate > config.AUTO_MAX_CREDITS_PER_MIN:
             raise BudgetError(
-                f"rate limit: {_rate_per_min()} credits in the last minute "
-                f"(cap {config.AUTO_MAX_CREDITS_PER_MIN})")
+                f"this scan needs {estimate} credits and the ceiling is "
+                f"{config.AUTO_MAX_CREDITS_PER_MIN}/min "
+                f"({_rate_per_min()} used in the last minute)")
         if auto:
             _expire_locked()
             if not _state["armed"]:

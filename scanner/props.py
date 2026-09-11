@@ -11,7 +11,7 @@ different venues:
     `batter_home_runs` carries BetRivers ONLY, while DraftKings and FanDuel
     post the same line under `batter_home_runs_alternate`. Querying only the
     former makes it look like DK/FD do not offer home run props at all. Each
-    key bills its own credit per game — see config.PROPS_HR_MARKETS.
+    key bills its own credit per game — see config.PROP_MARKETS.
 
     Books are limited to config.ODDS_API_BOOKMAKERS, the same list the
     moneyline scan uses, so every view shows the books actually bet at.
@@ -35,7 +35,7 @@ import re
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -44,8 +44,6 @@ from .sources.kalshi import _start_from_ticker
 
 ODDS_HOST = "https://api.the-odds-api.com"
 KALSHI_MARKETS = "https://api.elections.kalshi.com/trade-api/v2/markets"
-HR_SERIES = "KXMLBHR"
-HR_POINT = 0.5                      # the 1+ line
 KALSHI_THETA = 0.07                 # taker fee coefficient
 
 
@@ -105,18 +103,18 @@ def _kalshi_prob(price: float) -> float:
 
 # ----------------------------------------------------------- Kalshi side
 
-def fetch_kalshi_hr() -> dict:
+def fetch_kalshi_hr(pc) -> dict:
     """normalised player -> {yes, no, tickers, event_ticker, start}. Free."""
     out, cursor = {}, None
     for _ in range(10):
-        params = {"series_ticker": HR_SERIES, "status": "open", "limit": 200}
+        params = {"series_ticker": pc.kalshi_series, "status": "open", "limit": 200}
         if cursor:
             params["cursor"] = cursor
         r = requests.get(KALSHI_MARKETS, params=params, timeout=30)
         r.raise_for_status()
         d = r.json()
         for m in d.get("markets", []):
-            if not m["ticker"].endswith("-1"):      # "-1" == the 1+ line
+            if not m["ticker"].endswith(pc.kalshi_suffix):   # the 1+ line
                 continue
             title = m.get("title") or ""
             player = title.split(":")[0].strip()
@@ -143,7 +141,7 @@ def fetch_kalshi_hr() -> dict:
 PM_GATEWAY = "https://gateway.polymarket.us"
 
 
-def fetch_polymarket_hr(game_slugs=None) -> dict:
+def fetch_polymarket_hr(pc, game_slugs=None) -> dict:
     """normalised player -> Polymarket US 1+ HR market. Free, no API key.
 
     NOTE: props are only exposed on /v1/events?slug=<game>; the leagues feed
@@ -153,7 +151,7 @@ def fetch_polymarket_hr(game_slugs=None) -> dict:
     with requests.Session() as session:
         if game_slugs is None:
             try:
-                r = session.get(f"{PM_GATEWAY}/v2/leagues/mlb/events",
+                r = session.get(f"{PM_GATEWAY}/v2/leagues/{pc.pm_league}/events",
                                 params={"limit": 100}, timeout=30)
                 r.raise_for_status()
                 game_slugs = [e["slug"] for e in r.json().get("events", [])
@@ -177,9 +175,9 @@ def fetch_polymarket_hr(game_slugs=None) -> dict:
                 if not ev:
                     continue
                 for m in ev.get("markets", []):
-                    if m.get("sportsMarketType") != "baseball_player_home_runs":
+                    if m.get("sportsMarketType") != pc.pm_market_type:
                         continue
-                    if m.get("line") != 1:          # only the 1+ line
+                    if m.get("line") != pc.pm_line:      # only the 1+ line
                         continue
                     title = m.get("title") or ""
                     player = re.sub(r"\s*\d\+.*$", "", title).strip()
@@ -213,33 +211,47 @@ def fetch_polymarket_hr(game_slugs=None) -> dict:
 
 # ----------------------------------------------------- sportsbook side
 
-def list_events():
-    """Upcoming MLB events. This endpoint is FREE (0 credits)."""
-    r = requests.get(f"{ODDS_HOST}/v4/sports/baseball_mlb/events",
+def list_events(pc):
+    """Upcoming events for this prop's sport, within its horizon. FREE.
+
+    The horizon is not cosmetic here the way it is on a moneyline board: each
+    game returned is a credit the scan will spend. Football hands back the
+    whole season, so without this a single touchdown scan would bill 212.
+    """
+    r = requests.get(f"{ODDS_HOST}/v4/sports/{pc.odds_api_sport}/events",
                      params={"apiKey": config.ODDS_API_KEY}, timeout=30)
     r.raise_for_status()
-    return r.json()
+    cutoff = datetime.now(timezone.utc) + timedelta(hours=pc.horizon_hours)
+    out = []
+    for e in r.json():
+        st = _parse_iso(e.get("commence_time"))
+        if st is None or st <= cutoff:
+            out.append(e)
+    return out
 
 
-_props_cache = {}      # event_id -> (fetched_at, best, meta)
+# Keyed by (prop, event) — the same NFL game is a different fetch for
+# touchdowns than it would be for any other prop, and sharing one cache slot
+# would serve one market's prices under another's name.
+_props_cache = {}      # (prop_key, event_id) -> (fetched_at, best, meta)
 
 
-def _event_props(session, event_id):
+def _event_props(session, pc, event_id):
     """Best Over-0.5 price per player for one game.
 
     Costs 1 CREDIT unless this event was fetched within
     config.PROPS_CACHE_TTL_S, in which case the cached copy is reused for free.
     """
-    hit = _props_cache.get(event_id)
+    hit = _props_cache.get((pc.key, event_id))
     if hit and (time.time() - hit[0]) < config.PROPS_CACHE_TTL_S:
         meta = dict(hit[2] or {})
         meta["cached"] = True
         return hit[1], meta
     try:
         r = session.get(
-            f"{ODDS_HOST}/v4/sports/baseball_mlb/events/{event_id}/odds",
+            f"{ODDS_HOST}/v4/sports/{pc.odds_api_sport}/events/{event_id}/odds",
             params={"apiKey": config.ODDS_API_KEY, "regions": "us",
-                    "markets": ",".join(config.PROPS_HR_MARKETS),
+                    "markets": ",".join(pc.odds_api_markets),
                     # same books as every other scan — the ones actually bet at
                     "bookmakers": config.ODDS_API_BOOKMAKERS,
                     "oddsFormat": "american"}, timeout=30)
@@ -251,10 +263,14 @@ def _event_props(session, event_id):
     best = {}
     for bk in d.get("bookmakers", []):
         for mk in bk.get("markets", []):
-            if mk.get("key") not in config.PROPS_HR_MARKETS:
+            if mk.get("key") not in pc.odds_api_markets:
                 continue
             for o in mk.get("outcomes", []):
-                if o.get("name") != "Over" or o.get("point") != HR_POINT:
+                # Anytime-TD markets name the outcome "Yes" with no point;
+                # home runs are an "Over" at 0.5. Same bet, different shape.
+                if o.get("name") != pc.outcome_name:
+                    continue
+                if pc.outcome_point is not None and o.get("point") != pc.outcome_point:
                     continue
                 player = o.get("description") or ""
                 key = norm_player(player)
@@ -271,12 +287,12 @@ def _event_props(session, event_id):
             "books": sorted({b["key"] for b in d.get("bookmakers", [])}),
             "cached": False,
             "remaining": r.headers.get("x-requests-remaining")}
-    _props_cache[event_id] = (time.time(), best, meta)
+    _props_cache[(pc.key, event_id)] = (time.time(), best, meta)
     return best, meta
 
 
-def scan(max_events: int = None, top_per_game: int = None):
-    """Match book 1+ HR prices against Kalshi's Yes/No on the same player.
+def scan(pc, max_events: int = None, top_per_game: int = None):
+    """Match book prices for a prop against the exchanges' Yes/No on the player.
 
     `max_events` limits how many GAMES are covered — the only real lever on
     cost, since each game is 1 credit however many players it returns.
@@ -287,20 +303,20 @@ def scan(max_events: int = None, top_per_game: int = None):
     if top_per_game is None:
         top_per_game = config.PROPS_TOP_PER_GAME
     top_per_game = top_per_game or 0          # 0 / None = keep every player
-    kalshi = fetch_kalshi_hr()
+    kalshi = fetch_kalshi_hr(pc)
     try:
-        pmarket = fetch_polymarket_hr()
+        pmarket = fetch_polymarket_hr(pc)
     except Exception as e:
         print(f"  [props/pm] fetch failed: {e}")
         pmarket = {}
-    events = list_events()
+    events = list_events(pc)
     if max_events:
         events = events[:max_events]
 
     rows, remaining, books_seen = [], None, set()
     with requests.Session() as session:
         with ThreadPoolExecutor(max_workers=6) as pool:
-            results = list(pool.map(lambda e: _event_props(session, e["id"]), events))
+            results = list(pool.map(lambda e: _event_props(session, pc, e["id"]), events))
 
     billed = 0
     for ev, (book_best, meta) in zip(events, results):
@@ -310,7 +326,7 @@ def scan(max_events: int = None, top_per_game: int = None):
         if meta:
             books_seen.update(meta.get("books") or [])
             if not meta.get("cached"):
-                billed += len(config.PROPS_HR_MARKETS)   # 1 credit per market
+                billed += len(pc.odds_api_markets)       # 1 credit per market
         # keep the likeliest hitters in this game (highest book probability)
         keep = sorted(book_best.items(), key=lambda kv: -kv[1]["prob"])
         game_rows = 0
@@ -369,7 +385,7 @@ def _american(prob: float) -> str:
     return f"+{round((d - 1) * 100)}" if d >= 2 else f"-{round(100 / (d - 1))}"
 
 
-def to_games(rows):
+def to_games(rows, pc):
     """Reshape prop rows into the SAME structure the moneyline scan returns.
 
     A "1+ home runs" prop is just a two-outcome market, so it slots into the
@@ -383,7 +399,7 @@ def to_games(rows):
     for r in rows:
         # Short outcome labels: the player's name is the row title, so the
         # Team column reads "1+ HR" / "No HR" the way it reads a team name.
-        yes_team, no_team = "1+ HR", "No HR"
+        yes_team, no_team = pc.label, pc.no_label
         q = []
 
         def add(book, team, prob, meta=None, detail=""):
@@ -420,7 +436,7 @@ def to_games(rows):
                     {"market_slug": r["pm_slug"], "ask": r["pm_no"], "long": False},
                     f"ask {r['pm_no']:.3f}")
 
-        games.append({"sport": "mlb-hr", "away": yes_team, "home": no_team,
+        games.append({"sport": pc.sport_tag, "away": yes_team, "home": no_team,
                       "start": r["start"], "title": r["player"],
                       "matchup": f"{r['away']} @ {r['home']}",
                       "quotes": q})

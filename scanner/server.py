@@ -266,7 +266,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
         elif self.path == "/api/scan_props":
-            # 1+ home run scanner, on the same footing as every other view: it
+            # Player-prop scanner, on the same footing as every other view: it
             # refreshes itself and covers the whole slate. It is still the
             # expensive one — the sportsbook half only exists on the per-event
             # endpoint, so it bills 1 credit PER GAME rather than 1 per sport —
@@ -276,13 +276,16 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 req = self._read_body()
                 auto = bool(req.get("auto"))
+                pc = config.PROP_MARKETS.get(req.get("prop") or "mlb_hr")
+                if pc is None:
+                    raise ValueError(f"unknown prop {req.get('prop')!r}")
                 n = req.get("max_events")
                 top = req.get("top_per_game")
                 n = int(n) if n else None
-                estimate = n or len(props.list_events()) or 1
+                estimate = (n or len(props.list_events(pc)) or 1) * len(pc.odds_api_markets)
                 budget.gate(estimate=estimate, auto=auto)
                 rows, quota = props.scan(
-                    max_events=n,
+                    pc, max_events=n,
                     top_per_game=int(top) if top else None)
                 budget.note_spend(quota, estimate=int(quota.get("credits_spent") or 0))
                 # same payload shape as /api/scan so the UI renders it with the
@@ -290,7 +293,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({
                     "scanned_at": datetime.now(timezone.utc).isoformat(),
                     "credits_remaining": quota.get("remaining"),
-                    "games": props.to_games(rows),
+                    "games": props.to_games(rows, pc),
+                    "prop": pc.key,
                     "quota": quota,
                 })
             except budget.BudgetError as e:

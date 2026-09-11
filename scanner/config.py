@@ -270,7 +270,62 @@ HEDGE_MAX_SLIPPAGE_CENTS = 5.0     # how far through the book we will pay
 # spending a credit each.
 HEDGE_QUOTE_TTL_S = 5.0
 
-# ---- 1+ HR prop scanning ----
+# ---- player prop markets ----
+# A prop view is a two-outcome player market: the books quote only the "yes"
+# side, and the hedge comes from the exchanges' "no". Everything that differs
+# between one prop and the next lives here, so adding another is an entry in
+# PROP_MARKETS rather than a second scanner.
+@dataclass
+class PropConfig:
+    key: str                      # our short name, used by the API and the UI
+    label: str                    # the yes side, as a column reads it
+    no_label: str                 # the no side
+    sport_tag: str                # `sport` on the rows; keeps game keys distinct
+    odds_api_sport: str
+    odds_api_markets: tuple       # 1 CREDIT PER GAME for each key listed
+    outcome_name: str             # the outcome to keep ("Over" / "Yes")
+    outcome_point: float = None   # and its point, where the market has one
+    kalshi_series: str = ""
+    kalshi_suffix: str = "-1"     # the 1+ line within the series
+    pm_market_type: str = ""
+    pm_league: str = ""
+    pm_line: int = 1
+    # How far ahead to cover. This is the cost dial: props bill 1 credit PER
+    # GAME, and the free events endpoint hands back the whole SEASON for
+    # football — 212 NFL games, which is 212 credits and a board full of
+    # fixtures a fortnight away that no exchange has priced yet.
+    horizon_hours: float = 36
+
+
+PROP_MARKETS = {
+    "mlb_hr": PropConfig(
+        key="mlb_hr", label="1+ HR", no_label="No HR", sport_tag="mlb-hr",
+        odds_api_sport="baseball_mlb",
+        # The books split home runs across two keys and EACH bills its own
+        # credit per game: `batter_home_runs` carries BetRivers only, while
+        # DraftKings and FanDuel post the line under the alternate key.
+        # Querying only the former makes it look like DK/FD offer no HR props.
+        odds_api_markets=("batter_home_runs_alternate",),
+        outcome_name="Over", outcome_point=0.5,
+        kalshi_series="KXMLBHR",
+        pm_market_type="baseball_player_home_runs", pm_league="mlb",
+    ),
+    "nfl_td": PropConfig(
+        key="nfl_td", label="1+ TD", no_label="No TD", sport_tag="nfl-td",
+        odds_api_sport="americanfootball_nfl",
+        # `player_anytime_td` carries six of the seven books for one credit.
+        # ESPN BET posts touchdowns only under `player_tds_over` (point 0.5),
+        # which is the same bet but a second credit per game — add that key
+        # here if you want it, knowing it doubles the cost.
+        odds_api_markets=("player_anytime_td",),
+        outcome_name="Yes", outcome_point=None,
+        kalshi_series="KXNFLTD",
+        pm_market_type="football_player_touchdowns", pm_league="nfl",
+        horizon_hours=120,      # Thursday through Monday: one week's slate
+    ),
+}
+
+# ---- prop scanning ----
 # The Odds API bills 1 credit PER GAME for player props (one call returns every
 # player in that game), so the only ways to spend less are to scan fewer games
 # and to not re-fetch one you already have. Props barely move, so a scan result

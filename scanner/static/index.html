@@ -1894,7 +1894,12 @@ function esc(t) {
    ordinary table, order ticket and hedge calculator. The only differences are
    that instant buy is switched off — this is not a live-trading view. The book
    row, the clock and the refresh are all the shared ones. */
-let propData = null, propQuota = null, propView = false, mlData = null;
+// Keyed by prop, because there is more than one now: 1+ HR and 1+ TD are
+// different markets on different sports, and a single slot would show one
+// under the other's name for the moment before its own scan landed.
+let propData = {}, propQuota = {}, propView = false, propKey = null, mlData = null;
+function propCur() { return propKey ? propData[propKey] || null : null; }
+function propQ() { return propKey ? propQuota[propKey] || null : null; }
 
 /* ---------------- navigation ----------------
    Two levels: a sport picks the family, a subcategory picks the market within
@@ -1903,11 +1908,12 @@ let propData = null, propQuota = null, propView = false, mlData = null;
 const NAV = [
   { key: "baseball", label: "Baseball", subs: [
       { key: "moneyline", label: "Moneyline", sport: "mlb" },
-      { key: "hr",        label: "1+ HR",     props: true },
+      { key: "hr",        label: "1+ HR",     props: "mlb_hr" },
   ]},
   { key: "football", label: "Football", subs: [
       { key: "nfl",   label: "NFL",   sport: "nfl" },
       { key: "ncaaf", label: "NCAAF", sport: "ncaaf" },
+      { key: "td",    label: "1+ TD", props: "nfl_td" },
   ]},
   { key: "basketball", label: "Basketball", subs: [
       { key: "nba", label: "NBA", sport: "nba" },
@@ -2083,6 +2089,7 @@ function applyNav() {
   const sub = navCurrent();
   const wasProps = propView;
   propView = !!sub.props;
+  propKey = sub.props || null;
   if (propView !== wasProps) {
     // a boost belongs to one market, so it doesn't follow you across tabs
     boosts = {};
@@ -2110,12 +2117,12 @@ function applyView() {
   autoBeat();     // tells the server which market is being billed now
   document.getElementById("instantFlag").hidden = propView;
   document.getElementById("autoBox").hidden = propView ? true : !includeLive;
-  if (propView && !propData) {
+  if (propView && !propCur()) {
     document.getElementById("tableWrap").innerHTML = slowMode
-      ? `<div id="empty">1+ home run props aren't loaded.<br>
+      ? `<div id="empty">${esc(navCurrent().label)} props aren't loaded.<br>
          <small>Slow mode is on — press <b>Refresh</b> to pull them
          (<b>1 Odds API credit per game</b>).</small></div>`
-      : `<div id="empty">Loading 1+ home run props…</div>`;
+      : `<div id="empty">Loading ${esc(navCurrent().label)} props…</div>`;
     document.getElementById("summary").textContent = "";
   }
   if (propView) {
@@ -2126,7 +2133,7 @@ function applyView() {
     // It is the same seven books either way, so it is now the same row —
     // a book with no line on a given player just reads "—", exactly as it does
     // for a game it has not priced.
-    data = propData;
+    data = propCur();
   } else {
     data = mlData;
   }
@@ -2136,8 +2143,8 @@ function applyView() {
   renderMeta();
   renderTable();
   tickNow();     // the new market's prices now, not up to 10s from now
-  if (propView && propQuota) {
-    const q = propQuota, seen = q.books_seen || [];
+  if (propView && propQ()) {
+    const q = propQ(), seen = q.books_seen || [];
     document.getElementById("summary").innerHTML +=
       ` · ${q.events_scanned} games · <b>${q.credits_spent}</b> credit` +
       `${q.credits_spent === 1 ? "" : "s"}` +
@@ -3128,7 +3135,7 @@ async function fetchSportsbooks(signal) {
   const r = await fetch(propView ? "/api/scan_props" : "/api/scan", {
     signal,
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(propView ? { auto: true }
+    body: JSON.stringify(propView ? { auto: true, prop: propKey }
                                   : { sports: autoSports(), auto: true }),
   });
   const j = await r.json();
@@ -3144,7 +3151,7 @@ function tickPeriodNow() {
   // normal tier and whatever the per-minute ceiling actually affords: the
   // cadence then follows the slate size on its own, and refreshing can never
   // be the thing that empties the budget.
-  const perTick = (propQuota && propQuota.events_scanned) || 5;
+  const perTick = (propQ() && propQ().events_scanned) || 5;
   const cap = autoCfg.per_min_cap || 90;
   return Math.max(base, Math.ceil(perTick * 60000 / cap));
 }
@@ -3198,7 +3205,7 @@ async function masterTick() {
       if (!propView) carryExchangeQuotes(data, scan);
       // one tick, two possible payloads — keep them in their own slots so
       // switching market does not show the other view's rows
-      if (scan.quota) { propData = scan; propQuota = scan.quota; }
+      if (scan.quota) { propData[scan.prop] = scan; propQuota[scan.prop] = scan.quota; }
       else { mlData = scan; }
       data = scan;
       if (scan.budget) autoCfg = scan.budget;
@@ -3375,11 +3382,11 @@ async function doScan() {
     const r = propView
       ? await fetch("/api/scan_props", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ auto: false }) })
+          body: JSON.stringify({ auto: false, prop: propKey }) })
       : await fetch("/api/scan", { method: "POST" });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || r.statusText);
-    if (propView) { propData = j; propQuota = j.quota; }
+    if (propView) { propData[j.prop] = j; propQuota[j.prop] = j.quota; }
     else { carryExchangeQuotes(data, j); mlData = j; }
     data = j;
     renderMeta();
