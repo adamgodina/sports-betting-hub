@@ -794,6 +794,20 @@ Rounding follows the same logic: buying YES rounds the wire price **up** a
 tick, buying NO rounds it **down**, since paying more for NO means selling YES
 lower. Both directions assert the result actually crosses before sending.
 
+### Order prices sit on a whole-cent grid
+
+Polymarket US markets tick in 1¢ or ½¢ — never coarser — so limits are
+rounded to whole cents, which is valid on every market. They used to be
+rounded to half-cents, and on a 1¢ market the exchange snapped them to its
+own grid. That broke the most common hedge there is: a No leg at 96¢ plus the
+sweep capped at 99.5¢, which as a YES-denominated price is 0.005 — rounded to
+**zero** and rejected with *"Price must be greater than zero for buy order"*.
+
+The sweep is now capped a tick short of $1, so near the top of the book it is
+trimmed (96¢ + 5¢ → 99¢) rather than producing a price the exchange cannot
+take. Kalshi was never affected: its limits were already whole cents clamped
+to 1–99.
+
 ### Every order reports whether it filled
 
 All four order paths — quickbuy, hedge-ticket legs, the click-a-cell trade

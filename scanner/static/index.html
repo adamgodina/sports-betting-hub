@@ -2461,7 +2461,7 @@ function openModal(game, q) {
   document.getElementById("mGame").textContent =
     `${game.away} @ ${game.home} · ${fmtTime(game.start)} · buy = win if ${q.team} wins`;
   const price = q.meta.ask ?? eProb(q);
-  const step = q.book === "polymarket_us" ? 0.005 : 0.01;
+  const step = 0.01;   // both venues accept whole cents (see TICK in the trader)
   const inp = document.getElementById("mPrice");
   inp.step = step; inp.value = price.toFixed(step < 0.01 ? 3 : 2);
   document.getElementById("mAskNote").textContent =
@@ -2763,7 +2763,7 @@ function legEcon(leg) {
   const n = f.contracts;
   const notional = f.rounded ? n * ask : leg.stake;
   const fee = f.rounded ? theta * ask * (1 - ask) * n : 0;
-  const limit = f.rounded ? Math.min(0.995, ask + 0.01) : null;  // +1c cross
+  const limit = f.rounded ? Math.min(0.99, ask + 0.01) : null;  // +1c cross, capped a tick short of $1
   return { q, f, ask, n, notional, fee, limit,
            allIn: notional + fee, payout: f.payout,
            depth: (q.meta || {}).depth || 0,

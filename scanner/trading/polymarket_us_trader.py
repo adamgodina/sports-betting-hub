@@ -154,7 +154,14 @@ def status() -> dict:
         return {"configured": False, "error": str(e)}
 
 
-TICK = 0.005
+# Price grid for order limits. Polymarket US markets tick in 1c (4,699 of 4,841
+# sampled) or 0.5c (the rest); none coarser. A 1c grid is therefore valid on
+# EVERY market — a multiple of 0.01 is a multiple of 0.005 — so no per-order
+# lookup is needed on the click path. This was 0.005, and on a 1c market the
+# exchange snapped our half-cent prices to its own grid: a No hedge at 96c
+# plus the sweep capped at 99.5c, became a YES price of 0.005, and was rounded
+# to ZERO — "Price must be greater than zero for buy order".
+TICK = 0.01
 
 
 def fillable(market_slug: str, long: bool, max_price: float):
@@ -247,8 +254,12 @@ def place_order(market_slug: str, price: float, contracts: float,
 
     cross = (slip if config.HEDGE_FILL_MODE
              else config.ORDER_CROSS_CENTS / 100.0)
-    # `pay` is what we are willing to pay for the side we are buying.
-    pay = min(0.995, live + cross)
+    # `pay` is what we are willing to pay for the side we are buying. Capped a
+    # tick short of $1, because the order is sent as a YES price and buying NO
+    # at `pay` means a YES price of 1 - pay: that has to stay at least one tick.
+    # Near the top of the book this trims the sweep (96c + 5c -> 99c) rather
+    # than sending a price the exchange cannot accept.
+    pay = min(1.0 - TICK, live + cross)
 
     # Translate to a YES-denominated order price. Buying YES: that IS the
     # price, rounded UP a tick so it can't land below the ask. Buying NO:
@@ -265,7 +276,7 @@ def place_order(market_slug: str, price: float, contracts: float,
             raise ValueError(
                 f"internal: NO order priced at YES {wire}, which pays only "
                 f"{1 - wire:.4f} for NO vs a {live:.4f} ask; not sent")
-    wire = min(0.999, max(0.001, wire))
+    wire = min(1.0 - TICK, max(TICK, round(wire, 4)))
 
     body = dict(common, type="ORDER_TYPE_LIMIT",
                 price={"value": f"{wire:.4f}", "currency": "USD"},
