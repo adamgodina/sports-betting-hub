@@ -806,6 +806,7 @@ let BOOKS = [
   { key: "fanatics",    label: "Fanatics" },
   { key: "fliff",       label: "Fliff" },
   { key: "hardrockbet", label: "Hard Rock" },
+  { key: "williamhill_us", label: "Caesars" },
   { key: "kalshi",         label: "Kalshi" },
   { key: "polymarket_us",  label: "Polymarket" },
 ];
@@ -828,7 +829,7 @@ let trading = { kalshi: { configured: false }, polymarket_us: { configured: fals
 const VENUE_LABEL = { kalshi: "Kalshi", polymarket_us: "Polymarket" };
 const BOOK_LABEL = { draftkings: "DraftKings", fanduel: "FanDuel",
   betmgm: "BetMGM", espnbet: "ESPN BET", fanatics: "Fanatics", fliff: "Fliff",
-  hardrockbet: "Hard Rock" };
+  hardrockbet: "Hard Rock", williamhill_us: "Caesars" };
 /* A game's identity across snapshots. Object identity is NOT it: every paid
    scan replaces the whole game list with fresh objects from the server, so
    anything that remembers a game by reference is comparing against objects
@@ -897,8 +898,14 @@ function loadBookLayout() {
   bookOrder  = saved.order.filter(keep);
   bookHidden = (saved.hidden || []).filter(keep);
   // A book added to the app since this layout was saved has to end up
-  // somewhere, or it would be invisible with no way to bring it back.
-  for (const k of DEFAULT_ORDER) if (!seen.has(k)) bookOrder.push(k);
+  // somewhere, or it would be invisible with no way to bring it back. A new
+  // SPORTSBOOK goes in with the sportsbooks — just ahead of the first exchange
+  // — rather than trailing after Kalshi and Polymarket at the end of the row.
+  for (const k of DEFAULT_ORDER) {
+    if (seen.has(k)) continue;
+    const ex = EXCHANGES.has(k) ? -1 : bookOrder.findIndex(b => EXCHANGES.has(b));
+    if (ex >= 0) bookOrder.splice(ex, 0, k); else bookOrder.push(k);
+  }
   if (!bookOrder.length) { bookOrder = DEFAULT_ORDER.slice(); bookHidden = []; }
   const off = new Set(saved.off || []);
   selected = new Set(bookOrder.filter(k => !off.has(k)));

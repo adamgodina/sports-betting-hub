@@ -4,7 +4,7 @@ Compares prices for the same game across seven sportsbooks and two prediction
 markets, flags arbitrage, sizes a hedge, and places the exchange leg for you.
 
 **Sportsbooks** (via [The Odds API](https://the-odds-api.com)) — DraftKings,
-FanDuel, BetMGM, ESPN BET, Fanatics, Fliff, Hard Rock.
+FanDuel, BetMGM, ESPN BET, Fanatics, Fliff, Hard Rock, Caesars.
 **Exchanges** (tradeable) — Kalshi and Polymarket US.
 **Sports** — MLB (moneyline + 1+ home runs), NFL, NCAAF, NBA, CBB, ATP, WTA.
 
@@ -95,7 +95,7 @@ need no key.
 | what | cost |
 |---|---|
 | One sportsbook scan of one sport | 1 Odds API credit |
-| Adding sportsbooks | **free** — billed per block of 10, and seven is one block |
+| Adding sportsbooks | **free** — billed per block of 10, and eight is one block |
 | Pressing Refresh | 1 credit per enabled sport |
 | 1+ HR props | 1 credit **per game** |
 | Continuous refresh, live tier | 60 credits/minute, for the sport on screen |
@@ -538,9 +538,9 @@ Book chips size to their names; only the table columns are fixed width. A
 uniform pill grid made short names look padded out and read worse than the
 ragged row you are arranging by hand.
 
-### Nine columns
+### Ten columns
 
-Seven sportsbooks plus two exchanges is wider than most windows (fewer, if you
+Eight sportsbooks plus two exchanges is wider than most windows (fewer, if you
 have hidden some), so the table
 scrolls sideways with **Game and Team pinned left, Best and vig/ROI pinned
 right** — a row stays identifiable and **Place order** stays reachable at any
@@ -940,8 +940,13 @@ is an entry there rather than a second module.
 | Polymarket type | `baseball_player_home_runs` | `football_player_touchdowns` |
 | horizon | 36h (~25 games) | 120h (~14 games) |
 
-The market key is the whole game, and it differs per sport. Home runs split
-across two keys, only one of which carries DraftKings and FanDuel. Touchdowns
+The market key is the whole game, and it differs per sport — and per book.
+Home runs split across two keys: DraftKings, FanDuel, BetMGM, ESPN BET and
+Fanatics post under `batter_home_runs_alternate`, while **Caesars posts only
+under `batter_home_runs`**. Each key is its own credit per game, so HR queries
+the alternate key alone by default and Caesars is absent from that view; add
+`batter_home_runs` to `mlb_hr.odds_api_markets` to bring it in at double the
+cost. (Caesars' Odds API key is `williamhill_us`, the legacy William Hill name.) Touchdowns
 have a single key that carries six of the seven books — ESPN BET posts them
 only under `player_tds_over`, the same bet at a second credit per game, so it
 is left out by default.

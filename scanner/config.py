@@ -148,9 +148,10 @@ SPORTS = {
 ENABLED_SPORTS = ["mlb", "nfl", "ncaaf", "nba", "cbb", "atp", "wta"]
 
 # The sportsbooks used everywhere — moneylines and player props alike.
-# The Odds API bills bookmakers in blocks of ten, so all seven of these cost
+# The Odds API bills bookmakers in blocks of ten, so all eight of these cost
 # the SAME 1 credit per sport per request that two did (verified against
-# x-requests-last). Adding books is free; adding sports or markets is not.
+# x-requests-last). Adding books is free up to ten; adding sports or markets
+# is not.
 ODDS_API_BOOKMAKERS = ",".join([
     "draftkings",
     "fanduel",
@@ -159,6 +160,7 @@ ODDS_API_BOOKMAKERS = ",".join([
     "fanatics",
     "fliff",
     "hardrockbet",
+    "williamhill_us",   # Caesars — the Odds API still uses the William Hill key
 ])
 
 # ---- scan pacing (terminal loop; the UI paces itself, see AUTO_* below) ----
@@ -302,9 +304,11 @@ PROP_MARKETS = {
         key="mlb_hr", label="1+ HR", no_label="No HR", sport_tag="mlb-hr",
         odds_api_sport="baseball_mlb",
         # The books split home runs across two keys and EACH bills its own
-        # credit per game: `batter_home_runs` carries BetRivers only, while
-        # DraftKings and FanDuel post the line under the alternate key.
-        # Querying only the former makes it look like DK/FD offer no HR props.
+        # credit per game. Of our books, DraftKings, FanDuel, BetMGM, ESPN BET
+        # and Fanatics post under the alternate key, while Caesars posts ONLY
+        # under `batter_home_runs`. Querying just one key makes a whole group
+        # of books look like they offer no HR props. Add "batter_home_runs"
+        # here to bring Caesars in, at a second credit per game.
         odds_api_markets=("batter_home_runs_alternate",),
         outcome_name="Over", outcome_point=0.5,
         kalshi_series="KXMLBHR",
@@ -337,15 +341,6 @@ PROPS_CACHE_TTL_S = 300.0
 # the board. Set it to a positive number to trim the table again.
 PROPS_TOP_PER_GAME = 0
 
-# Which Odds API market key(s) to read the 1+ HR line from. The books split
-# across two keys and EACH key costs its own credit per game:
-#   batter_home_runs            -> BetRivers only
-#   batter_home_runs_alternate  -> DraftKings, FanDuel, BetMGM, Bovada,
-#                                  BetOnline, MyBookie
-# Default is the alternate key alone: it is the one carrying DraftKings and
-# FanDuel, for 1 credit per game. (The standard key only adds BetRivers, which
-# is not used, so there is no reason to pay the second credit.)
-PROPS_HR_MARKETS = ("batter_home_runs_alternate",)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
