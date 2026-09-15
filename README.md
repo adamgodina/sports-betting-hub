@@ -292,47 +292,25 @@ snail, with the wording in the tooltip and `aria-label`. The refresh icon spins
 while a scan is in flight; the button used to swap its text to "Scanning…",
 which would now delete the icon from the DOM.
 
-### Row order holds still while you aim at it
+### Row order is always vig order
 
-The board re-ranks by combined price, cheapest first. That is useful and also
-dangerous: at a 1-second cadence a row can move out from under the cursor
-between seeing a price and clicking it. So while the pointer is over the table
-(or an order ticket is open) the current order is frozen and only the numbers
-change.
+The board is ranked by combined price (vig), cheapest first, on every render —
+including while the pointer is over the table or an order ticket is open.
 
-That freeze was broken in a way that looked like the opposite of a freeze.
-It remembered the previous order in a `Map` keyed by **game object identity**,
-but every paid scan replaces the whole game list with fresh objects from the
-server. So the lookup missed every row, all the sort keys collapsed to the same
-fallback value, and the board fell back to the server's own order — by start
-time. Hovering the table therefore *caused* the best game to drop to wherever
-its kickoff time put it, usually far down the list.
+There used to be a hover freeze here: to stop a row moving out from under a
+click at the 1-second cadence, the order was held while the pointer was over
+the table, with arbitrages allowed to jump above it. In practice the pointer is
+over the table nearly all the time, and prices kept moving under the held
+order, so worse games sat above better ones until the mouse left the table. It
+has been removed; ranking is strict.
 
-Order is now remembered by `gameKey(g)` — `sport|away|home|start` — which
-survives the object swap. `/api/refresh` had to start returning `sport` for
-that key to line up across the two payload shapes.
+Rows are keyed by `gameKey(g)` — `sport|title|away|home|start` — never by object
+identity, since every scan replaces the game objects. The ranking has a
+deterministic tiebreak (start time, then key), so two games on the same price
+don't swap places every tick.
 
-The ranking itself also gets a deterministic tiebreak (start time, then key).
-Without one, two games on the same combined price could swap places every tick
-for no visible reason. Measured across a 98-row board: zero rows move between
-ticks unless a price actually changed.
-
-**An arbitrage outranks the freeze.** Holding the order absolutely had a worse
-failure than shuffling: a game that *became* an arb while the cursor was over
-the table stayed wherever it had been, sitting below worse prices until you
-moved the mouse away. In live mode that is the normal case, because that is
-exactly when a price moves far enough to open one. Measured on a 98-row NCAAF
-board, every render put a non-arb at the top with a real arb pinned at index 1.
-
-So the hold now applies *within* a class rather than across it: arbs always
-render above non-arbs, and nothing shuffles inside either group — which is what
-keeps a Place order button from moving out from under a click. Verified zero
-violations of "no arb below a non-arb" across a run of live renders.
-
-The trade-off is visible and intended. While you hover, arbs keep their
-relative order rather than re-sorting by ROI (top of board reads
-`0.9964, 0.9995, 0.9799, 0.9851` — all arbs, order held); move the cursor off
-the table and the full ranking snaps back (`0.9799, 0.9851, 0.9964, 0.9995`).
+This holds with a bonus bet or a max-bet boost set too: those rows show the
+dollars banked, but the order is still vig.
 
 ### One clock, and a countdown instead of a timestamp
 
@@ -394,7 +372,7 @@ Three states per book, because they answer different questions:
 |---|---|---|
 | in the row, **on** | tap | compared; the best price can come from it |
 | in the row, **off** | tap again | greyed, column still there — you can see the price you are choosing not to use, and it is one tap from returning |
-| **hidden** | `×` on the chip, or drag it to the Hidden row | gone from the row and from the table |
+| **hidden** | `×` on the chip, or drag it to the Hidden row | gone from the row and from the table — and **reset**: turned off, unpinned, and any boost or bonus bet on it cleared, so it comes back clean |
 
 **Drag a chip to move its column.** Dragging works within the row, from the
 row to Hidden, and from Hidden back into any position in the row. **All on** /
@@ -612,10 +590,8 @@ Implementation notes:
   stacks.
 - Quotes are updated **in place**, so an open order ticket keeps its stake
   input and just re-prices — it refreshes on every tick.
-- Rows **re-rank live** as prices move — except while the cursor is inside the
-  table (or an order ticket is open), where the current order is held so a
-  Place order button can't slide out from under you. It re-ranks the moment the
-  cursor leaves.
+- Rows **re-rank live** by vig on every update, including while the cursor is
+  over the table or an order ticket is open.
 - On error the price feed backs off to 3s and the header shows the retry count;
   depth failures are silent since prices keep flowing.
 
@@ -1068,6 +1044,80 @@ its event ticker, Polymarket's from the market's `gameStartTime`.
 Verified across a live slate: 67 rows, 67 distinct keys, 46 carrying both
 venues, and every venue reference agreeing with its row's game date.
 
+## Parlay builder
+
+**Parlay** — its own button beside the market tabs, off the sport wheel, since
+a parlay can mix sports. Picking a market or turning the wheel leaves it, and
+clicking it again returns to the board you were on. Search any Kalshi line that can go in
+a combo (player touchdowns and home runs, game lines, spreads, totals…), add two
+or three, and flip each to Yes or No. Every outcome of the set is listed — for
+two legs: both hit, only the first, only the second, neither. Exactly one of
+them happens, so holding all of them pays the same whatever the result; a
+sportsbook parlay is one of those outcomes, and buying the rest hedges it.
+
+Each outcome row prices itself from one of three places:
+
+| Source | Where it comes from |
+| --- | --- |
+| **Kalshi** | A maker's quote on that exact combo — press **Get Kalshi quotes** |
+| **Estimate** | The legs' own Kalshi mid prices multiplied, assuming independence |
+| **Your odds** | American odds you type in — up to two rows |
+
+Every price is also shown as American odds (Kalshi's with its fee included), so
+a contract reads like a sportsbook line.
+
+It hedges like the two-way calculator: every row has a stake, and typing one
+resizes the others to pay the same (Kalshi rows in whole contracts). **🔓 fix**
+pins a row's stake — a bet already placed — so it never resizes. With no stake
+typed, **payout per outcome** drives it. Totals show total cost, the sum of prices (under 100% is an
+arbitrage) and EV ROI, with each outcome's P&L and normalized chance on its row.
+
+How the Kalshi quote works (`scanner/parlay.py`):
+
+1. `POST /multivariate_event_collections/KXMVESPORTSMULTIGAMEEXTENDED-R` builds
+   the combo from the chosen markets and sides (5,000 new combos a week).
+2. `POST /communications/rfqs` asks makers to price it at your size. Combos have
+   no resting book, so this is the only real price.
+3. Quotes are read for up to 4 seconds, then the RFQ is **deleted**. Nothing is
+   accepted or bought from this page. A quote's `yes_bid`/`no_bid` are the
+   maker's bids, so owning the outcome costs `1 − best no_bid`.
+
+### Buying an outcome (real money)
+
+Each Kalshi row has **Buy N @ X¢**, and **Buy all Kalshi rows** buys every one
+in parallel. Both ask for confirmation first. On click, `parlay.buy_outcome`:
+
+1. Opens a fresh RFQ at the row's contract count — the on-screen quote is
+   seconds old and never traded against directly.
+2. Takes the best maker's price and **refuses** if it is more than 3¢ above the
+   price shown (`parlay.BUY_MAX_SLIPPAGE`; the server clamps the cap itself, so
+   the client can't widen it), if the maker offers fewer contracts, or if the
+   market's Kalshi shard can't cover price + fee. A refusal deletes the RFQ.
+3. Accepts with `accepted_side: "no"` — owning the combo means taking the
+   maker's **No bid**, per Kalshi's FIX spec ("BUY accepts the maker's NO
+   quote") and the rule that a quote's two bids can't sum past $1.
+4. Waits for the maker's last look (3s on combos) and the 1s execution timer,
+   then reads the resulting order back and reports FILLED / PARTIAL / NOT
+   FILLED through the same fill confirmation as every other order.
+
+The REST docs never state step 3's side outright, so every buy also checks the
+order's `outcome_side`. If Kalshi recorded anything other than YES the result is
+a red **WRONG SIDE** alarm, not a fill. **Make the first buy a single contract**
+and check the position on Kalshi before sizing up.
+
+"Your odds" and estimate rows have no button — those you place yourself.
+
+Same-game legs are flagged: they are not independent (two players on one team
+compete for the same touchdowns), so the estimate is rough there.
+
+**Polymarket US** has combos and RFQs too, but its API marks them beta-only and
+this key gets 403, so there are no Polymarket combo prices yet.
+
+Search is free — Kalshi's public market data for the NFL, NCAAF, MLB, NBA, NCAAB
+and tennis series in the collection, cached five minutes. Kalshi rate-limits that
+endpoint hard, so it loads three series at a time with backoff. The page runs no
+tick and sends no heartbeat, so sitting on it never spends Odds API credits.
+
 ## The order ticket (primary flow)
 
 Every game row has a yellow **Place order** button in the Vig column. The calculator lets you pick a book
@@ -1212,6 +1262,29 @@ conditional ("must be +100 or greater"). A boosted header reads
 `FanDuel +50% ≥+100`. Legs shorter than the minimum simply don't qualify and
 stay at their raw price.
 
+### Max bet
+
+The editor has a third, optional field: the **max bet** (`$`). Boost promos cap
+the stake, and once the stake is fixed the useful question stops being "which
+market is cheapest" and becomes "where does this boost bank the most dollars" —
+the same question a bonus bet asks, so it is planned the same way:
+
+    payout = max × boosted decimal
+    hedge  = payout × best price on the other side
+    gain   = payout − max − hedge      (the same either way)
+
+Both sides of each game are priced, and the hedge is priced *without* this
+book's boost (the promo is on the other leg). With a max set:
+
+- the board stays **ranked by vig** like always, and each row shows what the
+  boost banks there;
+- the right-hand cell shows the dollar gain (red when it costs money), the gain
+  as a % of the max, and the vig/ROI under it;
+- **Place order** opens with the boosted leg fixed at the max and the hedge
+  sized to pay the same either way.
+
+A header with a max reads `FanDuel +40% $50 ≥+100`.
+
 ## Bonus bets
 
 A bonus bet is a free stake that does **not** come back when it wins: $100 at
@@ -1298,10 +1371,9 @@ hedged at Colorado State −1200 on Hard Rock:
 
 ### What the board shows
 
-With a bonus live the board answers a different question — not "where is the
-thinnest market" but "where does the free stake bank the most" — so it **ranks
-by raw winnings**, highest first, with games the bonus cannot be placed on at
-the bottom. The Vig column leads with the money:
+With a bonus live the board stays **ranked by vig**, but each row answers the
+bonus question — where does the free stake bank the most — so the Vig column
+leads with the money:
 
 ```
 $84.62

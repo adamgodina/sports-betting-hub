@@ -59,7 +59,10 @@
   .meta b { color: var(--text); font-weight: 600; }
   .headactions { display: flex; align-items: center; gap: 10px;
                  flex-shrink: 0; flex-wrap: nowrap; white-space: nowrap; }
-  .nav { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  /* Rows stretch to the widest (the wheel), so the Parlay pill can sit flush
+     with the wheel's right edge. */
+  .nav { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+  #navParlay { margin-left: auto; }
   .navrow { display: flex; align-items: center; gap: 9px; }
   /* Fixed width so the two tracks line up under each other rather than
      starting wherever their label happens to end. */
@@ -441,6 +444,10 @@
   .boostsep { margin: 0 3px; font-size: 9px; font-weight: 700; opacity: .75;
               text-transform: none; letter-spacing: 0; }
   .boostinput.bmin { width: 36px; }
+  .boostinput.bmax { width: 34px; }
+  /* Three fields: the minimum wraps to a second line while editing. */
+  th.bookhead.boosted.editing { white-space: normal; padding-bottom: 4px; line-height: 1.6; }
+  .sumv.negv { color: #ff7b72; }
   /* Editing fills the header: no name, fields centred, nothing clipped. The
      column is 94px, so the two fields plus their separator have to live inside
      roughly 90 — the padding is trimmed while editing to buy those pixels. */
@@ -667,6 +674,82 @@
   }
   #hedgeBothBtn:hover { filter: brightness(1.1); }
   #hedgeBothBtn:disabled { opacity: .5; cursor: wait; filter: none; }
+  [hidden] { display: none !important; }
+
+  /* ---- parlay builder ---- */
+  .pb { max-width: 760px; }
+  .pbsearch { position: relative; margin: 4px 0 12px; }
+  #pbQ {
+    width: 100%; box-sizing: border-box; background: var(--panel2);
+    border: 1px solid var(--border); color: var(--text); border-radius: 9px;
+    padding: 11px 14px; font-size: 14.5px;
+  }
+  #pbQ:focus { outline: none; border-color: var(--accent); }
+  .pbresults {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    max-height: 360px; overflow-y: auto; box-shadow: 0 12px 30px rgba(0,0,0,.45);
+  }
+  .pbhit { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+           padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .pbhit:last-child { border-bottom: 0; }
+  .pbhitname, .pblegname { flex: 1; min-width: 180px; display: flex; flex-direction: column; }
+  .pbhitname b, .pblegname b { font-weight: 600; font-size: 13.5px; }
+  .pbhitname span, .pblegname span { color: var(--muted); font-size: 11.5px; }
+  .pbadd {
+    border: 1px solid var(--border); background: var(--panel2); color: var(--text);
+    border-radius: 7px; padding: 5px 10px; font-size: 12px; font-weight: 700;
+    cursor: pointer; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .pbadd.yes:hover { border-color: var(--best); color: var(--best); }
+  .pbadd.no:hover { border-color: #ff7b72; color: #ff7b72; }
+  .pbadd:disabled { opacity: .35; cursor: default; border-color: var(--border); color: var(--text); }
+  .pbempty { color: var(--muted); font-size: 12.5px; padding: 10px 12px; }
+  .pbhint { color: var(--muted); font-size: 12.5px; padding: 6px 2px 14px; line-height: 1.5; }
+  .pblegs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .pbleg {
+    display: flex; align-items: center; gap: 10px; background: var(--panel2);
+    border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px;
+  }
+  .pbside { border: 0; border-radius: 6px; padding: 5px 0; width: 42px; cursor: pointer;
+            font-weight: 800; font-size: 11px; letter-spacing: .3px; }
+  .pbside:disabled { cursor: default; }
+  .pbtag { border-radius: 5px; padding: 2px 6px; font-weight: 800; font-size: 10px;
+           letter-spacing: .3px; }
+  .pbside.yes, .pbtag.yes { background: var(--best-bg); color: var(--best); }
+  .pbside.no, .pbtag.no { background: rgba(255,123,114,.12); color: #ff7b72; }
+  .pblegpx { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .pbx { border: 0; background: none; color: var(--muted); font-size: 18px;
+         cursor: pointer; padding: 0 4px; line-height: 1; }
+  .pbx:hover { color: var(--text); }
+  .pbhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 6px; }
+  .pbhead .autolabel { color: var(--muted); font-size: 12px; }
+  .pbquote {
+    margin-left: auto; border: 0; border-radius: 8px; padding: 9px 16px;
+    font-size: 13px; font-weight: 700; cursor: pointer; background: var(--buy); color: #04170c;
+  }
+  .pbquote:disabled { opacity: .55; cursor: wait; }
+  .pbvenue { color: var(--muted); font-size: 11.5px; margin: 6px 2px; }
+  .pbrow .tname { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13.5px; font-weight: 600; }
+  .pbpick { display: inline-flex; align-items: center; gap: 6px; }
+  .pbrow .botrow { min-height: 38px; flex-wrap: wrap; }
+  .pbodds input { width: 64px; }
+  .pbpnl { margin-left: auto; font-size: 14px; font-weight: 650;
+           font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pbpnl.pos { color: var(--best); }
+  .pbpnl.neg { color: #ff7b72; }
+  .pbpnl .pct, .pbpnl .cap { color: var(--muted); font-size: 11.5px; font-weight: 400; }
+  .pbpnl .pct { margin-left: 5px; }
+  .pbpnl .cap { margin-right: 6px; }
+  .pbbuyrow { display: flex; justify-content: flex-end; margin-top: 10px; }
+  #pbBuyAllWrap { margin-top: 14px; }
+  .pbbuyall {
+    width: 100%; border: 0; border-radius: 8px; padding: 11px 0;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+    background: var(--buy); color: #04170c; font-variant-numeric: tabular-nums;
+  }
+  .pbbuyall:hover { filter: brightness(1.1); }
+  .pbbuyall:disabled { opacity: .5; cursor: wait; filter: none; }
 </style>
 </head>
 <body>
@@ -680,7 +763,11 @@
           <button class="wheelarrow" id="sportNext" aria-label="next sport">&rsaquo;</button>
         </div></div>
       <div class="navrow"><span class="navlbl">Market</span>
-        <div class="navsubs" id="navSubs"></div></div>
+        <div class="navsubs" id="navSubs"></div>
+        <!-- Its own pill, not one of the markets: a parlay spans sports, so it
+             belongs to no sport's market list. -->
+        <div class="navsubs" id="navParlay"><span class="nsub" id="parlayTab"
+          onclick="toggleParlay()">Parlay</span></div></div>
     </div>
     <div class="autobox" id="autoBox" hidden>
       <button class="instantflag armedoff" id="instantFlag" type="button"
@@ -708,7 +795,7 @@
     </div>
   </header>
 
-  <div class="controls">
+  <div class="controls" id="booksRow">
     <span class="lbl">Compare books:</span>
     <div id="chips" class="chiprow"></div>
     <div class="rowbtns">
@@ -824,6 +911,8 @@ let includeLive = false;
    authorises spending, and the depth poll — so "nothing updates on its own"
    means exactly that rather than "the expensive half is off". */
 let slowMode = true;
+/* The parlay builder is a page of its own: no board, no tick, no spend. */
+let parlayView = false;
 let data = null;
 let trading = { kalshi: { configured: false }, polymarket_us: { configured: false } };
 const VENUE_LABEL = { kalshi: "Kalshi", polymarket_us: "Polymarket" };
@@ -852,7 +941,7 @@ function bookLabel(key) {
 }
 const VENUE_THETA = { kalshi: 0.07, polymarket_us: 0.06 };  // taker fee coefficients
 let sortedGames = [];   // games in current render order
-let pointerInTable = false;   // freeze re-sorting while you're aiming at a button
+let pointerInTable = false;   // pointer is over the table (no longer freezes sorting)
 let needDepthSoon = false;    // pull top-5 sizes right after the next price poll
 let safetyOn = true;          // auto-hedge quickbuys by default
 let modalCtx = null;    // quote being traded
@@ -1170,8 +1259,27 @@ function moveBook(k, dest, index) {
     selected.add(k);
   } else {
     bookHidden.splice(Math.min(index, bookHidden.length), 0, k);
+    // Hiding a book resets it: off, unpinned, and any boost or bonus bet on it
+    // cleared. A promo left behind on a hidden book kept pricing games (and
+    // forcing a leg) from a column you could no longer see; bringing the book
+    // back starts it clean.
     selected.delete(k);
     if (anchorBook === k) anchorBook = null;
+    if (boosts[k] != null) {
+      delete boosts[k];
+      try { localStorage.setItem("boosts", JSON.stringify(boosts)); } catch (e) {}
+    }
+    if (bonus && bonus.book === k) {
+      bonus = null;
+      try { localStorage.setItem("bonusBet", "null"); } catch (e) {}
+    }
+    // Same hand-off setBonus makes: a lone boost left on a visible book gets
+    // the pin back, since it is a one-leg promo too.
+    if (!anchorBook && !bonus) {
+      const boosted = Object.keys(boosts).filter(b => boostOf(b) && selected.has(b));
+      if (boosted.length === 1) anchorBook = boosted[0];
+    }
+    sortedGames = [];
     if (!bookOrder.length) {           // never leave an empty board
       bookOrder = [bookHidden.pop()];
       selected.add(bookOrder[0]);
@@ -1249,6 +1357,13 @@ function boostCfg(book) {
 }
 function boostOf(book) { const c = boostCfg(book); return c ? c.pct : 0; }
 function boostMinOf(book) { const c = boostCfg(book); return c ? c.min : null; }
+/* Optional max bet. Promos cap the stake ("boost up to $50"), and once the
+   stake is fixed the question stops being "cheapest market" and becomes "most
+   dollars banked" — so a boost with a max is planned like a bonus bet. */
+function boostMaxOf(book) { const c = boostCfg(book); return c && c.max > 0 ? +c.max : 0; }
+function anyBoostMax() {
+  return Object.keys(boosts).some(k => boostMaxOf(k) && selected.has(k));
+}
 
 function americanToProb(a) {
   a = parseFloat(a);
@@ -1350,8 +1465,58 @@ function bonusPlan(game) {
   return best;
 }
 
-function setBoost(book, pct, min) {
-  if (pct) boosts[book] = { pct: pct, min: (min == null ? null : min) };
+/* A boost with a max bet, sized like a bonus bet.
+
+   Stake M on the boosted leg at boosted decimal d = 1 + (dA - 1)(1 + pct), and
+   hedge the other side at its best price pB so both outcomes pay the same:
+
+       payout  P = M · d
+       hedge   s = P · pB
+       gain      = P - M - s  =  P (1 - pA' - pB)
+
+   M is fixed by the promo, so this is the absolute money it banks (or costs)
+   either way. Both sides are priced because the longest boosted price is not
+   always the best: a poor hedge back can eat it. The hedge is priced with THIS
+   book's boost switched off — the promo is on the other leg, so counting it on
+   the hedge too would invent money. */
+function boostPlanFor(game, bk) {
+  const pct = boostOf(bk), M = boostMaxOf(bk);
+  if (!pct || !M || !selected.has(bk)) return null;
+  const price = q => q.book === bk ? q.prob : eProb(q);
+  let best = null;
+  for (const side of [game.away, game.home]) {
+    const leg = quoteFor(game, bk, side);
+    if (!leg || !(leg.prob > 0) || !boostQualifies(leg, bk)) continue;
+    const other = side === game.away ? game.home : game.away;
+    let hedge = null;
+    for (const q of game.quotes)
+      if (q.team === other && selected.has(q.book) && (!hedge || price(q) < price(hedge)))
+        hedge = q;
+    if (!hedge) continue;
+    const pA = Odds.boostProb(leg.prob, pct), pB = price(hedge);
+    if (!(pA > 0 && pB > 0)) continue;
+    const payout = M / pA, hedgeStake = payout * pB;
+    const profit = payout - M - hedgeStake;
+    if (!best || profit > best.profit)
+      best = { book: bk, leg, side, hedge, other, stake: M, hedgeStake, payout,
+               profit, rate: profit / M, sum: pA + pB };
+  }
+  return best;
+}
+
+/* The best max-bet boost on this game across every boosted book, or null. */
+function boostPlan(game) {
+  let best = null;
+  for (const bk of Object.keys(boosts)) {
+    const p = boostPlanFor(game, bk);
+    if (p && (!best || p.profit > best.profit)) best = p;
+  }
+  return best;
+}
+
+function setBoost(book, pct, min, max) {
+  if (pct) boosts[book] = { pct: pct, min: (min == null ? null : min),
+                            max: max > 0 ? max : null };
   else delete boosts[book];
   try { localStorage.setItem("boosts", JSON.stringify(boosts)); } catch (e) {}
   // A boost is a single promo, usable on one leg — the same constraint a bonus
@@ -1380,6 +1545,13 @@ function applyBoostPlan(game) {
     .filter(q => boostOf(q.book) && selected.has(q.book))
     .map(q => q.book))];
   for (const bk of books) {
+    // With a max bet, the boost goes wherever it banks the most dollars —
+    // the same side boostPlan() will size the hedge around.
+    if (boostMaxOf(bk)) {
+      const plan = boostPlanFor(game, bk);
+      if (plan) plan.leg._boostOn = true;
+      continue;
+    }
     const pct = boostOf(bk);
     let pick = null;
     for (const q of game.quotes) {
@@ -1421,8 +1593,10 @@ function boostHeadHtml(b) {
       ` \u2265${parseFloat(bonus.min) > 0 ? "+" : ""}${bonus.min}`;
     return b.label + `<span class="boostmeta">BB $${bonus.amt}${bm}</span>`;
   }
+  const mx = boostMaxOf(b.key);
+  const maxTxt = mx ? ` <span class="boostmin">$${mx}</span>` : "";
   return b.label + (pct
-    ? `<span class="boostmeta">+${pct}%${cond}</span>`
+    ? `<span class="boostmeta">+${pct}%${maxTxt}${cond}</span>`
     : `<span class="boosthint"><span class="hb">boost</span>` +
       `<span class="hk">(1)</span><span class="hk hor">or</span>` +
       `<span class="hn">bonus</span><span class="hk">(2)</span></span>`);
@@ -1517,8 +1691,9 @@ function editBoost(book, th) {
   const cur = boostOf(book);
   if (cur) { setBoost(book, 0); return; }         // already boosted -> clear it
   boostEditing = true;
-  th.classList.add("boosted");
+  th.classList.add("boosted", "editing");
   const curMin = boostMinOf(book);
+  const curMax = boostMaxOf(book);
   // The book name is dropped while editing. The column is a fixed width, so
   // name + percent + "min" + minimum simply does not fit — the fields got
   // squeezed out of frame. Which book this is stays obvious from the column
@@ -1528,12 +1703,18 @@ function editBoost(book, th) {
     `<input class="boostinput" type="number" min="0" max="500" step="1" ` +
     `value="${cur || ""}" placeholder="%" title="boost percent" ` +
     `aria-label="profit boost percent">` +
-    `<span class="boostsep">\u2265</span>` +
+    `<span class="boostsep">$</span>` +
+    `<input class="boostinput bmax" type="number" min="0" step="5" ` +
+    `value="${curMax || ""}" placeholder="max" ` +
+    `title="max bet (optional) \u2014 with one set, the boost is sized like a bonus bet and ranked by the dollars it banks" ` +
+    `aria-label="max bet">` +
+    // three fields don't fit a 94px column on one line, so the minimum wraps
+    `<br><span class="boostsep">\u2265</span>` +
     `<input class="boostinput bmin" type="number" step="5" ` +
     `value="${curMin == null ? "" : curMin}" placeholder="any" ` +
     `title="minimum American price the leg must be at or longer than, e.g. 100" ` +
     `aria-label="minimum odds">`;
-  const [inp, minInp] = th.querySelectorAll("input");
+  const [inp, maxInp, minInp] = th.querySelectorAll("input");
   inp.focus();
   inp.select();
   let closed = false;
@@ -1541,22 +1722,23 @@ function editBoost(book, th) {
     if (closed) return;
     closed = true;
     boostEditing = false;
-    if (!apply) { setBoost(book, cur, curMin); return; }
+    if (!apply) { setBoost(book, cur, curMin, curMax); return; }
     const v = Math.max(0, Math.min(500, parseFloat(inp.value) || 0));
     const raw = minInp.value.trim();
     const mn = raw === "" ? null : parseFloat(raw);
-    setBoost(book, v, (mn == null || !isFinite(mn)) ? null : mn);
+    const mx = Math.max(0, parseFloat(maxInp.value) || 0);
+    setBoost(book, v, (mn == null || !isFinite(mn)) ? null : mn, mx);
   };
   const key = e => {
     if (e.key === "Enter") finish(true);
     else if (e.key === "Escape") finish(false);
   };
-  inp.onkeydown = key; minInp.onkeydown = key;
-  // only close when focus leaves the pair, so tabbing between them is fine
+  const fields = [inp, maxInp, minInp];
+  // only close when focus leaves all three, so tabbing between them is fine
   const maybeBlur = () => setTimeout(() => {
     if (!th.contains(document.activeElement)) finish(true);
   }, 0);
-  inp.onblur = maybeBlur; minInp.onblur = maybeBlur;
+  for (const f of fields) { f.onkeydown = key; f.onblur = maybeBlur; }
 }
 
 function fmtTime(iso) {
@@ -1600,7 +1782,7 @@ function analyze(game) {
   if (!ba || !bh) return null;
   const sum = eProb(ba) + eProb(bh);
   return { ba, bh, sum, roi: sum < 1 ? (1 / sum - 1) * 100 : 0,
-           bonus: bonusPlan(game) };
+           bonus: bonusPlan(game), boost: boostPlan(game) };
 }
 
 // Kalshi and Polymarket US both sell WHOLE contracts only — never fractional.
@@ -1660,7 +1842,8 @@ function sideCells(game, gi, team, best) {
   return html;
 }
 
-function renderTable(preserveOrder) {
+function renderTable() {
+  if (parlayView) return;       // the builder owns the page
   const wrap = document.getElementById("tableWrap");
   const summary = document.getElementById("summary");
   if (!data || !data.games) {
@@ -1690,43 +1873,23 @@ function renderTable(preserveOrder) {
   // is the thinnest market" but "where does the free stake bank the most". So
   // it ranks by raw winnings, highest first, and games the bonus cannot be
   // placed on fall to the bottom.
-  const rank = bonus
-    ? (x, y) => ((y.a && y.a.bonus ? y.a.bonus.profit : -1)
-               - (x.a && x.a.bonus ? x.a.bonus.profit : -1))
-        || new Date(x.g.start) - new Date(y.g.start)
-        || (gameKey(x.g) < gameKey(y.g) ? -1 : 1)
-    : (x, y) => (x.a ? x.a.sum : 9) - (y.a ? y.a.sum : 9)
+  // A boost with a max bet asks the same dollars question, so it ranks the
+  // same way. A live bonus bet still comes first: it is the pinned promo.
+  const boostMode = !bonus && anyBoostMax();
+  // Ranking is ALWAYS by vig (combined price), in every mode. Bonus bets and
+  // max-bet boosts used to re-rank by dollars banked, which read as a board
+  // that was simply out of order — both promos persist across reloads, so it
+  // stayed that way. Their dollar figure is still shown in the row.
+  const rank = (x, y) => (x.a ? x.a.sum : 9) - (y.a ? y.a.sum : 9)
         || new Date(x.g.start) - new Date(y.g.start)
         || (gameKey(x.g) < gameKey(y.g) ? -1 : 1);
-  if (preserveOrder && sortedGames.length) {
-    // Hold the order you are aiming at. Keyed by gameKey, NOT by object
-    // identity: a scan swaps every game object, so an identity map missed
-    // every row, collapsed all the sort keys to one value, and dropped the
-    // board back into the server's start-time order — which looked exactly
-    // like the best game being sent to the bottom the moment you hovered.
-    const pos = new Map(sortedGames.map((g, i) => [gameKey(g), i]));
-    // An arbitrage outranks the freeze. Holding the order absolutely meant a
-    // game that BECAME an arb while your cursor was over the table stayed
-    // wherever it had been, buried under worse prices — and in live mode that
-    // is the normal case, because that is exactly when a price moves far
-    // enough to open one. So the hold applies WITHIN a class, not across it:
-    // arbs are always above non-arbs, and nothing shuffles inside either
-    // group, which is what stops a button moving out from under a click.
-    const cls = bonus
-      ? x => (x.a && x.a.bonus) ? 0 : 1        // placeable bonus outranks the hold
-      : x => (x.a && x.a.sum < 1) ? 0 : 1;
-    analyzed.sort((x, y) => {
-      const c = cls(x) - cls(y);
-      if (c) return c;
-      const a = pos.get(gameKey(x.g)), b = pos.get(gameKey(y.g));
-      if (a === undefined && b === undefined) return rank(x, y);
-      if (a === undefined) return 1;      // new arrivals go to the end
-      if (b === undefined) return -1;
-      return a - b;
-    });
-  } else {
-    analyzed.sort(rank);
-  }
+  // Always strictly ranked. There used to be a hover freeze here that held
+  // row positions while the cursor was over the table (or a ticket was open),
+  // so a Place order button couldn't move under a click. But the cursor is
+  // over the table nearly all the time, and prices kept moving underneath the
+  // held order — so worse games sat above better ones until the mouse left.
+  // The board's job is to be in vig order, so it always is.
+  analyzed.sort(rank);
   sortedGames = analyzed.map(x => x.g);
 
   const arbs = analyzed.filter(x => x.a && x.a.sum < 1);
@@ -1747,7 +1910,15 @@ function renderTable(preserveOrder) {
     const bp = a && a.bonus;
     // With a bonus bet live the headline figure is the money it banks, since
     // that is the whole point of the row; the vig sits underneath it.
-    const sumCell = bp
+    const bst = !bp && boostMode && a && a.boost;
+    const sumCell = bst
+      ? `<td class="sumcell boostcell" rowspan="2">
+           <div class="sumv ${bst.profit < 0 ? "negv" : ""}">${bst.profit < 0 ? "−" : ""}$${Math.abs(bst.profit).toFixed(2)}</div>
+           <div class="roi">${(bst.rate * 100).toFixed(1)}% of $${bst.stake}</div>
+           <div class="roi">${bst.sum < 1 ? "+" + ((1 / bst.sum - 1) * 100).toFixed(2) + "% ROI"
+                                          : ((bst.sum - 1) * 100).toFixed(2) + "% vig"}</div>
+           <span class="placebtn" data-hgi="${gi}">Place order</span></td>`
+      : bp
       ? `<td class="sumcell bonuscell" rowspan="2">
            <div class="sumv">$${bp.profit.toFixed(2)}</div>
            <div class="roi">${(bp.rate * 100).toFixed(0)}% of bonus</div>
@@ -1778,10 +1949,11 @@ function renderTable(preserveOrder) {
            title="${bonusOn(b.key)
              ? `${b.label}: $${bonus.amt} bonus bet — double-click to remove it`
              : boostOf(b.key)
-               ? `${b.label} is boosted +${boostOf(b.key)}% — click to remove it. `
-                 + `Double-click to set a bonus bet instead.`
-               : `Click to set a profit boost for ${b.label}, `
-                 + `double-click for a bonus bet.`}"` : "") +
+               ? `${b.label} is boosted +${boostOf(b.key)}%`
+                 + (boostMaxOf(b.key) ? ` up to a $${boostMaxOf(b.key)} bet` : "")
+                 + ` — click to remove it. Double-click to set a bonus bet instead.`
+               : `Click to set a profit boost for ${b.label} (with an optional max `
+                 + `bet), double-click for a bonus bet.`}"` : "") +
         `>${boostHeadHtml(b)}</th>`).join("")}
       <th class="num stickybest">Best</th>
       <th class="num stickyvig">Vig</th></tr></thead>
@@ -1813,6 +1985,10 @@ function renderTable(preserveOrder) {
 function renderCountdown() {
   const el = document.getElementById("nextTick");
   if (!el) return;
+  if (parlayView) {             // nothing on a clock here
+    if (lastCountdownHtml !== "") { el.innerHTML = ""; lastCountdownHtml = ""; }
+    return;
+  }
   retuneTick();          // catch a tier change the moment it happens
   if (slowMode) {
     const html = `<b>manual</b>`;
@@ -1932,6 +2108,15 @@ const NAV = [
   ]},
 ];
 let navSport = "baseball", navSub = "moneyline";
+/* The parlay builder sits beside the markets rather than on the sport wheel:
+   a parlay can mix sports, so it is a mode of its own. Opening it keeps the
+   sport and market you were on, so leaving it lands you back there. */
+let parlayOn = false;
+
+function toggleParlay() {
+  parlayOn = !parlayOn;
+  applyNav();
+}
 
 function navGroup() { return NAV.find(n => n.key === navSport) || NAV[0]; }
 function navCurrent() {
@@ -1942,8 +2127,9 @@ function navCurrent() {
 function renderNav() {
   buildWheel();
   document.getElementById("navSubs").innerHTML = navGroup().subs.map(sb =>
-    `<span class="nsub ${sb.key === navSub ? "on" : ""}"
+    `<span class="nsub ${sb.key === navSub && !parlayOn ? "on" : ""}"
        onclick="selectSub('${sb.key}')">${sb.label}</span>`).join("");
+  document.getElementById("parlayTab").classList.toggle("on", parlayOn);
 }
 
 /* ---------------- the sport wheel ----------------
@@ -2018,6 +2204,7 @@ function settleWheel() {
   if (key !== navSport) {
     navSport = key;
     navSub = navGroup().subs[0].key;   // land on the family's first market
+    parlayOn = false;                  // turning the wheel means the board
     applyNav();
   }
 }
@@ -2086,8 +2273,9 @@ function selectSport(key) {
 }
 
 function selectSub(key) {
-  if (key === navSub) return;
+  if (key === navSub && !parlayOn) return;
   navSub = key;
+  parlayOn = false;                    // picking a market leaves the builder
   applyNav();
 }
 
@@ -2097,6 +2285,7 @@ function applyNav() {
   const wasProps = propView;
   propView = !!sub.props;
   propKey = sub.props || null;
+  parlayView = parlayOn;
   if (propView !== wasProps) {
     // a boost belongs to one market, so it doesn't follow you across tabs
     boosts = {};
@@ -2124,6 +2313,17 @@ function applyView() {
   autoBeat();     // tells the server which market is being billed now
   document.getElementById("instantFlag").hidden = propView;
   document.getElementById("autoBox").hidden = propView ? true : !includeLive;
+  document.getElementById("booksRow").hidden = parlayView;
+  if (parlayView) {
+    // Not a board: nothing to compare books on and nothing to refresh. The
+    // tick and the heartbeat both stand down here (see masterTick, autoBeat),
+    // so sitting on this page never authorises an Odds API credit.
+    document.getElementById("autoBox").hidden = true;
+    document.getElementById("hiddenRow").hidden = true;
+    renderParlay();
+    renderCountdown();
+    return;
+  }
   if (propView && !propCur()) {
     document.getElementById("tableWrap").innerHTML = slowMode
       ? `<div id="empty">${esc(navCurrent().label)} props aren't loaded.<br>
@@ -2662,11 +2862,28 @@ function openHedge(game) {
     note = `$${bonus.amt} bonus bet on ${bp.side} — stake is not returned, `
          + `so the hedge banks $${bp.profit.toFixed(2)} either way`;
   }
+  // A max-bet boost opens the same way: the boosted leg at the max, fixed,
+  // and the hedge sized to it — the trade the row's dollar figure describes.
+  let driver = "total";
+  const pl = !bp && a && a.boost && boostMaxOf(a.boost.book) ? a.boost : null;
+  if (pl) {
+    const bi = pl.side === game.away ? 0 : 1;
+    const bq = legs[bi].quotes.indexOf(pl.leg);
+    const hq = legs[1 - bi].quotes.indexOf(pl.hedge);
+    if (bq >= 0) legs[bi].sel = bq;
+    if (hq >= 0) legs[1 - bi].sel = hq;
+    legs[bi].stake = pl.stake;
+    legs[bi].locked = true;
+    driver = bi === 0 ? "A" : "B";
+    note = `+${boostOf(pl.book)}% boost on ${pl.side} at the $${pl.stake} max — `
+         + `hedged so it ${pl.profit >= 0 ? "banks" : "costs"} `
+         + `$${Math.abs(pl.profit).toFixed(2)} either way`;
+  }
   hedgeCtx = { game, legs };
   document.getElementById("hGame").textContent = game.title
     ? `${game.title} · ${game.matchup || ""} · ${fmtTime(game.start)} · ${note}`
     : `${game.away} ${game.sep || "@"} ${game.home} · ${fmtTime(game.start)} · ${note}`;
-  hedgeRecalc("total");
+  hedgeRecalc(driver);
   renderHedgeLegs();
   document.getElementById("hedgeOverlay").style.display = "flex";
   refreshDepthFor([game]);   // this game's size, fresh, regardless of rank
@@ -3195,9 +3412,9 @@ async function masterTick() {
     // ELEVEN SECONDS a tick — with no sport scope in that view it fanned out
     // across all seven — which is what pinned the countdown on "updating…".
     const jobs = [
-      propView ? Promise.resolve(null)
+      (propView || parlayView) ? Promise.resolve(null)
                : fetchExchanges(ctl.signal).catch(e => ({ _err: e })),
-      autoOn ? fetchSportsbooks(ctl.signal).catch(e => ({ _err: e }))
+      (autoOn && !parlayView) ? fetchSportsbooks(ctl.signal).catch(e => ({ _err: e }))
              : Promise.resolve(null),
     ];
     const [feed, scan] = await Promise.all(jobs);
@@ -3370,9 +3587,7 @@ function refreshDerived() {
   // scan and the live feed would have wiped it. It rides the shared tick now,
   // so bailing meant its table never re-rendered at all.
   if (boostEditing) return;   // never re-render while a boost is being typed
-  // Re-rank live. While the cursor is over the table (or a ticket is open) hold
-  // the current order so a Place order button can't jump out from under it.
-  renderTable(pointerInTable || !!hedgeCtx);
+  renderTable();                // always re-ranked by vig — see renderTable
   if (hedgeCtx) { refreshHedgeButtons(); updateHedgeTotals(); }
   if (modalCtx) updateCalc();
 }
@@ -3380,6 +3595,7 @@ function refreshDerived() {
 /* ---------------- data loading ---------------- */
 
 async function doScan() {
+  if (parlayView) return;       // quotes there come from Get Kalshi quotes
   const btn = document.getElementById("scanBtn");
   const err = document.getElementById("error");
   btn.disabled = true; btn.classList.add("busy"); err.style.display = "none";
@@ -3446,12 +3662,12 @@ document.getElementById("instantFlag").onclick = () => {
   safetyOn = !safetyOn;
   try { localStorage.setItem("safetyOn", safetyOn ? "1" : "0"); } catch (e) {}
   renderInstantFlag();
-  renderTable(true);
+  renderTable();
 };
 document.getElementById("autoAmt").oninput = () => {
   try { localStorage.setItem("autoAmt", autoAmount()); } catch (e) {}
   renderInstantFlag();
-  renderTable(true);
+  renderTable();
 };
 
 // restore quickbuy settings
@@ -3475,7 +3691,7 @@ function watchTablePointer() {
   wrap.addEventListener("mouseenter", () => { pointerInTable = true; });
   wrap.addEventListener("mouseleave", () => {
     pointerInTable = false;
-    refreshDerived();          // apply any ranking that changed while hovering
+    refreshDerived();
   });
 }
 
@@ -3544,7 +3760,7 @@ async function autoPost(action, extra) {
    switch. */
 async function autoBeat() {
   clearTimeout(autoBeatTimer);
-  const here = !document.hidden && !slowMode &&
+  const here = !document.hidden && !slowMode && !parlayView &&
                (Date.now() - lastInputAt) <= (autoCfg.idle_stop_s || 1800) * 1000;
   if (here) {
     try {
@@ -3616,7 +3832,7 @@ function renderSlow() {
   // button that hides itself — it is normally tucked away while the board is
   // re-scanning on its own, and that reason is gone here.
   document.getElementById("scanBtn").hidden =
-    slowMode ? false : (propView || includeLive);
+    parlayView ? true : slowMode ? false : (propView || includeLive);
 }
 
 function startFeeds() {
@@ -3644,6 +3860,526 @@ document.getElementById("addAllBtn").onclick = () => {
   bookHidden = [];
   afterBookChange(true);
 };
+
+/* ---------------- parlay builder ----------------
+
+   Pick two or three lines; every outcome of the set (each leg hitting or
+   missing) becomes a row. Exactly one of those outcomes happens, so holding
+   all of them pays the same whatever the result — the parlay version of a
+   two-sided hedge. Each row takes its price from one of three places:
+
+     Kalshi     a maker's quote on that exact combo (Get Kalshi quotes)
+     Estimate   the legs' own Kalshi prices multiplied, assuming independence
+     Your odds  American odds you type — a sportsbook price. Up to two rows.
+
+   Every row has a stake, and it hedges like the two-way calculator: type a
+   stake on any row and the others resize to pay the same. "fix" pins a row's
+   stake (a bet already placed) so it never resizes. Every price is also shown
+   as American odds. Quotes are read-only here; nothing is bought. */
+const PB_MAX_CUSTOM = 2;
+const pb = { legs: [], hits: [], outcomes: [], sameGame: false,
+             quotes: new Map(), cfg: new Map(), target: 100, driver: null,
+             quoting: false, quotedAt: null, err: "", lastQ: "",
+             searchSeq: 0, outSeq: 0, wired: false };
+
+const pbCents = v => v == null ? "—" : (v * 100).toFixed(0) + "¢";
+// Round before choosing the sign: a fair-priced set nets -0.000001, which
+// otherwise reads as a red "-$0.00".
+const pbRound = v => Math.round(v * 100) / 100 || 0;
+const pbMoney = v => (pbRound(v) >= 0 ? "+$" : "−$") + Math.abs(pbRound(v)).toFixed(2);
+// The market title ("Kenneth Walker III: 1+ touchdowns"), not its yes_sub_title
+// ("Kenneth Walker III: 1+"), which drops what the 1+ is of. Outcome legs from
+// the server carry the title as their label already.
+function pbTitle(l) { return String(l.title || l.label || l.ticker).replace(/\?$/, ""); }
+function pbKey(legs) { return legs.map(l => l.ticker + ":" + l.side).sort().join("|"); }
+function pbLegBody() {
+  return pb.legs.map(l => ({ ticker: l.ticker, event_ticker: l.event_ticker, side: l.side }));
+}
+
+function renderParlay() {
+  document.getElementById("summary").textContent = "";
+  if (!document.getElementById("pbRoot")) {
+    document.getElementById("tableWrap").innerHTML = `<div id="pbRoot" class="pb">
+      <div class="pbsearch">
+        <input id="pbQ" type="text" autocomplete="off" spellcheck="false"
+          placeholder="Search Kalshi lines — a player, a team, “Walker 1+”">
+        <div id="pbResults" class="pbresults" hidden></div>
+      </div>
+      <div id="pbLegs"></div>
+      <div id="pbOut"></div>
+    </div>`;
+    wirePbSearch();
+  }
+  renderPbLegs();
+  renderPbOut();
+}
+
+function wirePbSearch() {
+  const inp = document.getElementById("pbQ");
+  inp.value = pb.lastQ;
+  let t = null;
+  inp.oninput = () => { clearTimeout(t); t = setTimeout(pbSearch, 220); };
+  inp.onfocus = () => {
+    const box = document.getElementById("pbResults");
+    if (box.innerHTML) box.hidden = false;
+  };
+  inp.onkeydown = e => {
+    if (e.key === "Escape") document.getElementById("pbResults").hidden = true;
+  };
+  if (pb.wired) return;
+  pb.wired = true;
+  document.addEventListener("pointerdown", e => {
+    const box = document.getElementById("pbResults");
+    if (box && !(e.target.closest && e.target.closest(".pbsearch"))) box.hidden = true;
+  });
+}
+
+async function pbSearch() {
+  const q = document.getElementById("pbQ").value.trim();
+  pb.lastQ = q;
+  const box = document.getElementById("pbResults");
+  if (q.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
+  const seq = ++pb.searchSeq;
+  box.hidden = false;
+  if (!pb.hits.length) box.innerHTML =
+    `<div class="pbempty">Loading Kalshi's combinable lines — the first search takes a few seconds…</div>`;
+  try {
+    const r = await fetch("/api/parlay/search?q=" + encodeURIComponent(q));
+    const j = await r.json();
+    if (seq !== pb.searchSeq) return;
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    pb.hits = j.lines;
+    box.innerHTML = j.lines.length ? j.lines.map(pbHitHtml).join("")
+      : `<div class="pbempty">No Kalshi line that can go in a combo matches “${esc(q)}”.</div>`;
+  } catch (e) {
+    if (seq === pb.searchSeq)
+      box.innerHTML = `<div class="pbempty">Search failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function pbHitHtml(l, i) {
+  const have = pb.legs.some(x => x.ticker === l.ticker);
+  const full = pb.legs.length >= 3;
+  return `<div class="pbhit">
+    <div class="pbhitname"><b>${esc(pbTitle(l))}</b>
+      <span>${esc(l.event)}${l.sub ? " · " + esc(l.sub) : ""}</span></div>
+    <button class="pbadd yes" ${have || full ? "disabled" : ""}
+      onclick="pbAdd(${i},'yes')">Yes ${pbCents(l.yes_ask)}</button>
+    <button class="pbadd no" ${have || full || l.yes_only ? "disabled" : ""}
+      onclick="pbAdd(${i},'no')">No ${pbCents(l.no_ask)}</button>
+  </div>`;
+}
+
+function pbAdd(i, side) {
+  const l = pb.hits[i];
+  if (!l || pb.legs.length >= 3 || pb.legs.some(x => x.ticker === l.ticker)) return;
+  pb.legs.push({ ...l, side });
+  document.getElementById("pbResults").hidden = true;
+  pbLegsChanged();
+}
+function pbRemove(i) { pb.legs.splice(i, 1); pbLegsChanged(); }
+function pbFlip(i) {
+  const l = pb.legs[i];
+  if (l.yes_only) return;
+  l.side = l.side === "yes" ? "no" : "yes";
+  pbLegsChanged();
+}
+
+async function pbLegsChanged() {
+  renderPbLegs();
+  const box = document.getElementById("pbResults");
+  if (box && pb.hits.length) box.innerHTML = pb.hits.map(pbHitHtml).join("");
+  const seq = ++pb.outSeq;
+  pb.err = "";
+  if (pb.legs.length < 2) { pb.outcomes = []; renderPbOut(); return; }
+  try {
+    const r = await fetch("/api/parlay/outcomes", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ legs: pbLegBody() }) });
+    const j = await r.json();
+    if (seq !== pb.outSeq) return;
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    pb.outcomes = j.outcomes;
+    pb.sameGame = j.same_game;
+  } catch (e) {
+    if (seq !== pb.outSeq) return;
+    pb.outcomes = [];
+    pb.err = "Couldn't list the outcomes: " + e.message;
+  }
+  renderPbOut();
+}
+
+function renderPbLegs() {
+  const el = document.getElementById("pbLegs");
+  if (!el) return;
+  if (!pb.legs.length) {
+    el.innerHTML = `<div class="pbhint">Search and add two or three lines. Every
+      outcome of the set — each leg hitting or missing — is then priced as its own
+      Kalshi combo, and the calculator shows what holding all of them costs and pays.</div>`;
+    return;
+  }
+  el.innerHTML = `<div class="pblegs">` + pb.legs.map((l, i) => `
+    <div class="pbleg">
+      <button class="pbside ${l.side}" onclick="pbFlip(${i})" ${l.yes_only
+        ? `disabled title="Kalshi only allows Yes on this line in a combo"`
+        : `title="Flip to ${l.side === "yes" ? "No" : "Yes"}"`}>${l.side === "yes" ? "Yes" : "No"}</button>
+      <div class="pblegname"><b>${esc(pbTitle(l))}</b><span>${esc(l.event)}</span></div>
+      <span class="pblegpx">${pbCents(l.side === "yes" ? l.yes_ask : l.no_ask)}</span>
+      <button class="pbx" onclick="pbRemove(${i})" aria-label="Remove leg">×</button>
+    </div>`).join("") + `</div>`;
+}
+
+/* One outcome row's resolved state: where its price comes from, and the price. */
+function pbRow(o) {
+  const key = pbKey(o.legs);
+  const cfg = pb.cfg.get(key) || { src: null, odds: "", stake: "", locked: false };
+  const q = pb.quotes.get(key) || null;
+  const k = q && q.yes_cost ? q.yes_cost : null;
+  let src = cfg.src || (k ? "kalshi" : "est");
+  if (src === "kalshi" && !k) src = "est";
+  return { o, key, cfg, q, k, src };
+}
+
+/* What owning a row costs per $1 of payout. Kalshi's taker fee is folded in,
+   the same way the board prices an exchange leg. */
+function pbPrice(r) {
+  if (r.src === "custom") {
+    const p = americanToProb(r.cfg.odds);
+    return p > 0 && p < 1 ? p : null;
+  }
+  if (r.src === "kalshi") return r.k + VENUE_THETA.kalshi * r.k * (1 - r.k);
+  return r.o.est;
+}
+
+/* Sized like the two-way hedge calculator. The row you last typed a stake into
+   drives: its payout is what every other row is sized to pay. A fixed row keeps
+   the stake you gave it whatever happens elsewhere, so a bet already placed
+   stays put while the rest re-hedge around it. With no driver the payout box
+   sets it. Kalshi rows round to whole contracts; the rest are dollar stakes. */
+function pbCalc() {
+  const rows = pb.outcomes.map(pbRow);
+  for (const r of rows) r.p = pbPrice(r);
+  const drv = rows.find(r => r.key === pb.driver);
+  const drvStake = drv ? parseFloat(drv.cfg.stake) || 0 : 0;
+  const T = drv && drv.p ? drvStake / drv.p : pb.target;
+  for (const r of rows) {
+    const own = (r === drv || r.cfg.locked) ? (parseFloat(r.cfg.stake) || 0) : null;
+    r.contracts = null;
+    if (!r.p) { r.stake = own || 0; r.cost = 0; r.payout = 0; continue; }
+    const want = own != null ? own / r.p : T;          // payout this row targets
+    if (r.src === "kalshi") {
+      r.contracts = Math.max(0, Math.round(want));      // $1 each at settlement
+      r.cost = r.contracts * r.p;
+      r.payout = r.contracts;
+      r.stake = own != null ? own : r.cost;
+    } else {
+      r.stake = own != null ? own : want * r.p;
+      r.cost = r.stake;
+      r.payout = r.stake / r.p;
+    }
+  }
+  const cost = rows.reduce((s, r) => s + r.cost, 0);
+  const psum = rows.reduce((s, r) => s + (r.p || 0), 0);
+  // Same weighting as the hedge calculator: each price's share of the total,
+  // which strips the overround and leaves each outcome's chance.
+  for (const r of rows) {
+    r.pnl = r.payout - cost;
+    r.norm = psum > 0 ? (r.p || 0) / psum : 0;
+  }
+  const ev = rows.reduce((s, r) => s + r.norm * r.pnl, 0);
+  return { rows, T, cost, psum, ev };
+}
+
+// "+398 · 19.0¢" — a contract price read as the sportsbook odds it equals
+const pbOddsLbl = (p, raw, unit) => p ? `${Odds.american(p)} · ${raw}${unit}` : "—";
+
+function renderPbOut() {
+  const el = document.getElementById("pbOut");
+  if (!el) return;
+  if (pb.legs.length < 2 || !pb.outcomes.length) {
+    el.innerHTML = pb.err ? `<div class="legwarn">${esc(pb.err)}</div>` : "";
+    return;
+  }
+  const c = pbCalc();
+  const nCustom = c.rows.filter(r => r.src === "custom").length;
+  const kalshiOn = (trading.kalshi || {}).configured;
+  const rows = c.rows.map((r, i) => {
+    const q = r.q;
+    const kp = r.k ? r.k + VENUE_THETA.kalshi * r.k * (1 - r.k) : null;
+    const kLbl = r.k ? `Kalshi ${pbOddsLbl(kp, (r.k * 100).toFixed(1), "¢")}`
+      : q ? (q.error ? "Kalshi — error" : "Kalshi — no quote") : "Kalshi — not quoted";
+    const name = r.o.legs.map(l => `<span class="pbpick"><span class="pbtag ${l.side}">${
+      l.side === "yes" ? "Yes" : "No"}</span>${esc(pbTitle(l))}</span>`).join("");
+    return `<div class="hleg pbrow">
+      <div class="toprow">
+        <span class="tname">${name}</span>
+        <select onchange="pbSrc(${i}, this.value)">
+          <option value="kalshi" ${r.src === "kalshi" ? "selected" : ""} ${r.k ? "" : "disabled"}>${kLbl}</option>
+          <option value="est" ${r.src === "est" ? "selected" : ""}>Estimate ${
+            r.o.est != null ? pbOddsLbl(r.o.est, (r.o.est * 100).toFixed(1), "%") : "—"}</option>
+          <option value="custom" ${r.src === "custom" ? "selected" : ""}
+            ${nCustom >= PB_MAX_CUSTOM && r.src !== "custom" ? "disabled" : ""}>Your odds</option>
+        </select>
+      </div>
+      <div class="botrow">
+        ${r.src === "custom"
+          ? `<label class="stakebox pbodds" title="American odds"><input id="pbOdds${i}"
+               type="text" inputmode="numeric" placeholder="+450" value="${esc(r.cfg.odds)}"
+               oninput="pbOddsInput(${i}, this.value)"></label>` : ""}
+        <label class="stakebox">$<input id="pbStake${i}" type="number" min="0" step="0.01"
+          value="${r.stake.toFixed(2)}" oninput="pbStakeInput(${i}, this.value)"></label>
+        <button class="lockbtn ${r.cfg.locked ? "on" : ""}" onclick="pbLock(${i})"
+          title="${r.cfg.locked
+            ? "This stake is fixed — the other rows hedge around it. Click to unlock."
+            : "Fix this stake (a bet you've already placed) so it never resizes."}"
+          >${r.cfg.locked ? "🔒 fixed" : "🔓 fix"}</button>
+        <span class="legqty" id="pbQty${i}"></span>
+        <span class="pbpnl" id="pbPnl${i}"></span>
+      </div>
+      ${r.src === "kalshi" && kalshiOn ? `<div class="pbbuyrow">
+        <button class="legtradebtn" id="pbBuy${i}" onclick="pbBuy(${i}, this)"></button>
+      </div>` : ""}
+      <div class="legstats" id="pbStats${i}"></div>
+      <div class="legresult" id="pbRes${i}"></div>
+      ${r.src === "kalshi" || !(q && q.error) ? "" :
+        `<div class="legwarn">Kalshi: ${esc(q.error)}</div>`}
+    </div>`;
+  }).join("");
+
+  const when = pb.quotedAt ? new Date(pb.quotedAt).toLocaleTimeString() : null;
+  el.innerHTML = `
+    <div class="pbhead">
+      <label class="stakebox">$<input id="pbTarget" type="number" min="1" step="1"
+        value="${c.T.toFixed(0)}" oninput="pbTargetChange(this)"
+        title="What each unfixed outcome pays; also the size quotes are requested at. Typing a stake on a row sets it instead."></label>
+      <span class="autolabel">payout per outcome</span>
+      <button class="pbquote" id="pbQuoteBtn" onclick="pbQuote()"
+        ${pb.quoting || !kalshiOn ? "disabled" : ""}
+        title="${kalshiOn ? "Builds each outcome's combo on Kalshi and asks makers for a price. Nothing is bought."
+                          : "Kalshi isn't connected — see README for .env setup"}"
+        >${pb.quoting ? `Quoting ${c.rows.length} outcomes…` : "Get Kalshi quotes"}</button>
+    </div>
+    ${pb.err ? `<div class="legwarn">${esc(pb.err)}</div>` : ""}
+    ${pb.sameGame ? `<div class="legwarn">Same-game legs: the estimate multiplies them
+      as if independent, and they are not. Trust the Kalshi quotes over it.</div>` : ""}
+    <div class="pbvenue">${when ? `Kalshi quoted at ${esc(when)} · ` : ""}Polymarket:
+      no combo quotes — its combo API needs beta access this key doesn't have.</div>
+    ${rows}
+    <div class="htotals">
+      <div class="cell"><b id="pbCost">—</b><span>total cost</span></div>
+      <div class="cell"><b id="pbSum">—</b><span>sum of prices</span></div>
+      <div class="cell"><b id="pbRoi">—</b><span>EV ROI</span></div>
+    </div>
+    ${kalshiOn && c.rows.some(r => r.src === "kalshi") ? `<div id="pbBuyAllWrap">
+      <button id="pbBuyAll" class="pbbuyall" onclick="pbBuyAll(this)"></button></div>` : ""}
+    <div class="crossnote">Buying requests a fresh quote at click, takes the best
+      maker's price if it is within ${(PB_BUY_SLIP * 100).toFixed(0)}¢ of the one
+      shown, and waits for the maker to confirm (up to ~3s) — otherwise nothing
+      is bought. Kalshi prices are makers' answers to a request for quote
+      at this payout size, with the taker fee included (and in the American odds
+      shown beside them). Each request is withdrawn as soon as it's read and
+      nothing is bought, so quotes go stale within seconds. Estimates assume the
+      legs are independent.</div>`;
+  pbNumbers(c);
+}
+
+/* Update figures in place, so typing in a field never rebuilds it. */
+function pbNumbers(c) {
+  c = c || pbCalc();
+  const active = document.activeElement;
+  const tgt = document.getElementById("pbTarget");
+  if (tgt && tgt !== active) tgt.value = c.T.toFixed(0);
+  c.rows.forEach((r, i) => {
+    const stake = document.getElementById("pbStake" + i);
+    if (stake && stake !== active) stake.value = r.stake.toFixed(2);
+    const qty = document.getElementById("pbQty" + i);
+    if (qty) qty.innerHTML = !r.p ? "no price"
+      : r.src === "kalshi" ? `<b>${r.contracts}</b> contracts · <b>$${r.cost.toFixed(2)}</b>`
+      : r.src === "custom" ? `<span class="statmuted">place this one yourself</span>`
+      : `<span class="statmuted">estimate — not tradeable</span>`;
+    const pnl = document.getElementById("pbPnl" + i);
+    if (pnl) {
+      pnl.className = "pbpnl " + (pbRound(r.pnl) >= 0 ? "pos" : "neg");
+      pnl.innerHTML = `<span class="cap">if this hits</span>${esc(pbMoney(r.pnl))}` +
+        `<span class="pct">(${(r.norm * 100).toFixed(1)}%)</span>`;
+    }
+    const st = document.getElementById("pbStats" + i);
+    if (st) {
+      const bits = [];
+      if (r.p) bits.push(`odds <b>${Odds.american(r.p)}</b>`);
+      if (r.o.est != null) bits.push(`fair <b>${(r.o.est * 100).toFixed(1)}%</b> (${Odds.american(r.o.est)})`);
+      if (r.k) bits.push(`Kalshi <b>${(r.k * 100).toFixed(1)}¢</b> · ${r.q.quotes} quote${r.q.quotes === 1 ? "" : "s"}`);
+      bits.push(`pays <b>$${r.payout.toFixed(2)}</b>`);
+      st.innerHTML = bits.map(b => `<span>${b}</span>`).join("");
+    }
+  });
+  c.rows.forEach((r, i) => {
+    const b = document.getElementById("pbBuy" + i);
+    if (!b || b.dataset.busy) return;
+    b.disabled = !(r.contracts >= 1);
+    b.textContent = `Buy ${r.contracts} @ ${(r.k * 100).toFixed(1)}¢ · $${r.cost.toFixed(2)}`;
+  });
+  const all = document.getElementById("pbBuyAll");
+  if (all && !all.dataset.busy) {
+    const ks = c.rows.filter(r => r.src === "kalshi" && r.contracts >= 1);
+    all.disabled = !ks.length;
+    all.textContent = `Buy all ${ks.length} Kalshi row${ks.length === 1 ? "" : "s"} · $`
+      + ks.reduce((s, r) => s + r.cost, 0).toFixed(2);
+  }
+  document.getElementById("pbCost").textContent = "$" + c.cost.toFixed(2);
+  const sum = document.getElementById("pbSum");
+  sum.textContent = (c.psum * 100).toFixed(1) + "%";
+  sum.className = c.psum > 0 && c.psum < 1 ? "pos" : "";
+  const roi = document.getElementById("pbRoi");
+  roi.textContent = (c.cost > 0 ? (c.ev / c.cost * 100).toFixed(2) : "0.00") + "%";
+  roi.className = c.ev >= 0 ? "pos" : "neg";
+}
+
+function pbSetCfg(r, patch) {
+  pb.cfg.set(r.key, { ...r.cfg, src: r.src, ...patch });
+}
+function pbSrc(i, v) {
+  const r = pbRow(pb.outcomes[i]);
+  pbSetCfg(r, { src: v });
+  renderPbOut();
+  if (v === "custom") {
+    const f = document.getElementById("pbOdds" + i);
+    if (f) f.focus();
+  }
+}
+function pbOddsInput(i, v) {
+  pbSetCfg(pbRow(pb.outcomes[i]), { odds: v });
+  pbNumbers();
+}
+/* Typing a stake makes that row the driver, the way typing either leg of the
+   two-way calculator re-sizes the other. */
+function pbStakeInput(i, v) {
+  const r = pbRow(pb.outcomes[i]);
+  pbSetCfg(r, { stake: v });
+  pb.driver = r.key;
+  pbNumbers();
+}
+function pbLock(i) {
+  const c = pbCalc();
+  const r = c.rows[i];
+  // freeze what the row shows right now, not whatever was last typed
+  pbSetCfg(r, { locked: !r.cfg.locked, stake: r.stake.toFixed(2) });
+  renderPbOut();
+}
+function pbTargetChange(inp) {
+  // the box takes over from whichever row was driving
+  pb.target = Math.max(0, parseFloat(inp.value) || 0);
+  pb.driver = null;
+  pbNumbers();
+}
+
+/* ---- buying a Kalshi outcome (real money) ----
+   The server re-quotes at click and only accepts within PB_BUY_SLIP of the
+   price on screen; it enforces the same cap itself. After the maker confirms,
+   the order is read back, and a fill is confirmed the same way every other
+   order in the app is (confirmFill). */
+const PB_BUY_SLIP = 0.03;          // mirrors parlay.BUY_MAX_SLIPPAGE
+
+function pbOutcomeText(r) {
+  return r.o.legs.map(l => `${l.side === "yes" ? "YES" : "NO"} ${pbTitle(l)}`).join("  +  ");
+}
+
+async function pbBuyRow(r, i, btn) {
+  const res = document.getElementById("pbRes" + i);
+  if (btn) { btn.disabled = true; btn.dataset.busy = "1"; btn.textContent = "Buying…"; }
+  if (res) { res.className = "legresult ok"; res.textContent = "requesting a fresh quote…"; }
+  try {
+    const rr = await fetch("/api/parlay/buy", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        legs: r.o.legs.map(l => ({ ticker: l.ticker, event_ticker: l.event_ticker,
+                                   side: l.side, label: pbTitle(l) })),
+        contracts: r.contracts, shown_price: r.k,
+        max_price: r.k + PB_BUY_SLIP }) });
+    const j = await rr.json();
+    if (!rr.ok) throw new Error(j.error || rr.statusText);
+    loadTradingStatus();
+    if (j.wrong_side) {
+      toast("❌ " + j.status + "\n" + j.detail, "err");
+      if (res) { res.className = "legresult err"; res.textContent = j.status; }
+      return "wrong";
+    }
+    const kind = j.order_id
+      ? await confirmFill("kalshi", "Kalshi parlay", j, null, j.contracts)
+      : orderToast("Kalshi parlay", j, null);
+    if (res) {
+      res.className = "legresult " + (kind === "filled" ? "ok" : "err");
+      res.textContent = (kind === "filled" ? "FILLED" : kind === "partial"
+        ? "PARTIALLY FILLED" : "NOT FILLED") + " · " + j.status;
+    }
+    return kind;
+  } catch (e) {
+    if (res) { res.className = "legresult err"; res.textContent = "Not bought: " + e.message; }
+    return "error";
+  } finally {
+    if (btn) { delete btn.dataset.busy; btn.disabled = false; pbNumbers(); }
+  }
+}
+
+async function pbBuy(i, btn) {
+  const r = pbCalc().rows[i];
+  if (!r || r.src !== "kalshi" || !(r.contracts >= 1)) return;
+  const ok = confirm(`Buy ${r.contracts} contracts of this Kalshi parlay?\n\n`
+    + `${pbOutcomeText(r)}\n\nQuoted ${(r.k * 100).toFixed(1)}¢. A fresh quote is `
+    + `requested now and bought only at ${((r.k + PB_BUY_SLIP) * 100).toFixed(1)}¢ `
+    + `or better — at most $${(r.contracts * (r.k + PB_BUY_SLIP)).toFixed(2)} plus fee.`);
+  if (ok) await pbBuyRow(r, i, btn);
+}
+
+async function pbBuyAll(btn) {
+  const rows = pbCalc().rows.map((r, i) => [r, i])
+    .filter(([r]) => r.src === "kalshi" && r.contracts >= 1);
+  if (!rows.length) return;
+  const lines = rows.map(([r]) => `• ${r.contracts} × ${pbOutcomeText(r)} @ ${(r.k * 100).toFixed(1)}¢`);
+  const most = rows.reduce((s, [r]) => s + r.contracts * (r.k + PB_BUY_SLIP), 0);
+  if (!confirm(`Buy ${rows.length} Kalshi parlay${rows.length === 1 ? "" : "s"}?\n\n`
+      + lines.join("\n") + `\n\nEach is re-quoted now and bought only within `
+      + `${(PB_BUY_SLIP * 100).toFixed(0)}¢ of its price — at most $${most.toFixed(2)} `
+      + `plus fees. Any that can't be bought are reported, the rest still go through.`))
+    return;
+  btn.disabled = true; btn.dataset.busy = "1"; btn.textContent = "Buying…";
+  try {
+    // In parallel: every second spent here is a second the quotes go stale.
+    await Promise.all(rows.map(([r, i]) =>
+      pbBuyRow(r, i, document.getElementById("pbBuy" + i))));
+  } finally {
+    delete btn.dataset.busy; btn.disabled = false; pbNumbers();
+  }
+}
+
+async function pbQuote() {
+  if (pb.legs.length < 2 || pb.quoting) return;
+  pb.quoting = true;
+  pb.err = "";
+  renderPbOut();
+  const seq = pb.outSeq;
+  try {
+    const r = await fetch("/api/parlay/quote", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ legs: pbLegBody(),
+                             contracts: Math.max(1, Math.round(pbCalc().T)) }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    if (seq !== pb.outSeq) return;         // legs changed while quoting
+    for (const o of j.outcomes) pb.quotes.set(pbKey(o.legs), o.kalshi);
+    pb.quotedAt = Date.now();
+    const got = j.outcomes.filter(o => o.kalshi && o.kalshi.yes_cost).length;
+    if (!got) pb.err = "No Kalshi maker quoted any outcome at this size. Try a "
+      + "smaller payout, or again closer to game time.";
+    else if (got < j.outcomes.length) pb.err = `Kalshi quoted ${got} of `
+      + `${j.outcomes.length} outcomes; the rest fall back to the estimate.`;
+  } catch (e) {
+    pb.err = "Quote failed: " + e.message;
+  } finally {
+    pb.quoting = false;
+    renderPbOut();
+  }
+}
 
 loadBookLayout();
 BOOKS = mlBooks();

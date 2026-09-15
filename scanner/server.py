@@ -13,8 +13,9 @@ import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
-from . import budget, config, props
+from . import budget, config, parlay, props
 from .scan import (fresh_sportsbook_price, log_scan, refresh_depth,
                    refresh_exchange_quotes, scan_all)
 from .trading import kalshi_trader, polymarket_us_trader
@@ -102,6 +103,15 @@ class Handler(BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
+        elif self.path.startswith("/api/parlay/search"):
+            # Free: Kalshi's public market data, cached a few minutes.
+            try:
+                q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
+                self._send_json({"lines": parlay.search(q)})
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+        elif self.path == "/api/parlay/outcomes":
+            self._send_json({"error": "POST legs"}, 405)
         elif self.path == "/api/budget":
             self._send_json(budget.status())
         elif self.path == "/api/trading/status":
@@ -300,6 +310,50 @@ class Handler(BaseHTTPRequestHandler):
             except budget.BudgetError as e:
                 self._send_json({"error": str(e), "budget": budget.status(),
                                  "blocked": True}, 429)
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+        elif self.path == "/api/parlay/outcomes":
+            # Every outcome of the chosen legs with its independence estimate.
+            # Free and instant — no combo is created and nothing is asked.
+            try:
+                req = self._read_body()
+                rows, same = parlay.outcomes(req["legs"])
+                self._send_json({"outcomes": rows, "same_game": same})
+            except (KeyError, ValueError) as e:
+                self._send_json({"error": f"bad request: {e}"}, 400)
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+        elif self.path == "/api/parlay/quote":
+            # Only reached by the Get quotes button. Builds the combos on Kalshi
+            # and sends one request for quote per outcome, then deletes each
+            # RFQ once read. No quote is ever accepted here.
+            try:
+                req = self._read_body()
+                self._send_json(parlay.quote_all(
+                    req["legs"], int(req.get("contracts") or 100)))
+            except (KeyError, ValueError) as e:
+                self._send_json({"error": f"bad request: {e}"}, 400)
+            except kalshi_trader.TradingNotConfigured as e:
+                self._send_json({"error": str(e)}, 400)
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+        elif self.path == "/api/parlay/buy":
+            # REAL MONEY. Only reached by a Buy click the user confirmed. The
+            # cap is re-derived here so a client can never widen it past the
+            # price it was shown plus parlay.BUY_MAX_SLIPPAGE.
+            try:
+                req = self._read_body()
+                shown = float(req["shown_price"])
+                cap = min(float(req.get("max_price") or 1),
+                          shown + parlay.BUY_MAX_SLIPPAGE)
+                self._send_json(parlay.buy_outcome(
+                    req["legs"], float(req["contracts"]), round(cap, 4)))
+            except KeyError as e:
+                self._send_json({"error": f"bad request: missing {e}"}, 400)
+            except ValueError as e:
+                self._send_json({"error": str(e)}, 400)
+            except kalshi_trader.TradingNotConfigured as e:
+                self._send_json({"error": str(e)}, 400)
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
         elif self.path == "/api/depth":
