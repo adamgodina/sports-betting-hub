@@ -73,7 +73,36 @@ class SportConfig:
     # the same day; other sports need slack because Kalshi's
     # occurrence_datetime runs 3h fast when its ticker carries no clock time.
     match_tolerance_hours: float = 1.5
+    # Soccer can end level, so a match has THREE outcomes: home, draw, away.
+    # Everything downstream reads the outcome list rather than assuming two.
+    three_way: bool = False
+    # Keep a fixture that BOTH exchanges price even when the sportsbooks have
+    # never heard of it. Only worth it where the Odds API's coverage is thin
+    # and the exchanges' is not — tennis, where the books go dark between
+    # tournaments while Kalshi and Polymarket price a hundred matches a day.
+    exchange_only_rows: bool = False
     teams: dict = field(repr=False, default_factory=dict)
+
+
+# The draw is an outcome, not a team: the venues each name it differently
+# ("Draw" on the sportsbooks, "Tie" on Kalshi, its own market on Polymarket),
+# so they are all mapped onto this one label.
+DRAW = "Draw"
+
+
+def feeds(value) -> list[str]:
+    """The venue feeds behind one sport, as a list.
+
+    Most sports are one series and one league. Tennis is not: ATP and WTA are
+    separate everywhere — two Kalshi series, two Polymarket leagues, a fresh
+    Odds API key per tournament — but they are ONE thing to look at, so a sport
+    may name several feeds and the source modules fetch each in turn.
+    """
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [v.strip() for v in value.split(",") if v.strip()]
+    return [str(v).strip() for v in value if str(v).strip()]
 
 
 SPORTS = {
@@ -123,35 +152,140 @@ SPORTS = {
         match_mode="roster",
         match_tolerance_hours=12,
     ),
-    "atp": SportConfig(
-        key="atp",
+    # One tennis board, not one per tour. The Odds API has a separate key per
+    # TOURNAMENT (tennis_atp_us_open, tennis_wta_wuhan_open, ...), so the
+    # prefix is just "tennis": every tournament currently being priced is
+    # picked up, including any the API adds later. Kalshi and Polymarket each
+    # split men's and women's, so both feeds are named here.
+    #
+    # Cost: 1 credit per ACTIVE tournament, which is what the tour calendar
+    # happens to be running — typically 2-6, and 0 in the gaps between events.
+    "tennis": SportConfig(
+        key="tennis",
         odds_api_sport="",                       # resolved from the prefix
-        odds_api_sport_prefix="tennis_atp",
-        kalshi_series="KXATPMATCH",
-        polymarket_us_league="atp",
+        odds_api_sport_prefix="tennis",
+        kalshi_series="KXATPMATCH,KXWTAMATCH",
+        polymarket_us_league="atp,wta",
         polymarket_us_winner_type="tennis_match_winner",
         match_mode="name",                       # players, not a fixed roster
+        exchange_only_rows=True,
+        # Tennis start times are "not before", not kick-offs: the venues were
+        # measured up to 3h apart on the same match. Pairing plateaus at 4h
+        # (12h and 24h find nothing more), so this is slack, not looseness.
+        match_tolerance_hours=6,
     ),
-    "wta": SportConfig(
-        key="wta",
-        odds_api_sport="",
-        odds_api_sport_prefix="tennis_wta",
-        kalshi_series="KXWTAMATCH",
-        polymarket_us_league="wta",
-        polymarket_us_winner_type="tennis_match_winner",
+
+    "nhl": SportConfig(
+        key="nhl",
+        odds_api_sport="icehockey_nhl",
+        kalshi_series="KXNHLGAME",
+        polymarket_us_league="nhl",
+        polymarket_us_winner_type="hockey_team_full_game_winner",
+        match_mode="roster",        # Kalshi abbreviates to the city ("Vegas")
+        # A moneyline here settles after overtime and the shootout, so it is a
+        # two-way market despite hockey's ties in regulation.
+        horizon_hours=120,
+        match_tolerance_hours=12,   # the ticker carries no clock time
+    ),
+
+    # UFC: one event per fight, two entrants, matched by name like tennis.
+    # Kalshi's KXUFCFIGHT ticker carries no clock time (KXUFCFIGHT-26SEP29ABUSTA),
+    # so the start comes from occurrence_datetime — which is why the tolerance
+    # is generous: the sportsbooks time a fight from the CARD's start, and a
+    # prelim can be hours from the main event.
+    "ufc": SportConfig(
+        key="ufc",
+        odds_api_sport="mma_mixed_martial_arts",
+        kalshi_series="KXUFCFIGHT",
+        polymarket_us_league="ufc",
+        polymarket_us_winner_type="ufc_fight_winner",
         match_mode="name",
+        horizon_hours=336,          # cards are announced weeks out
+        match_tolerance_hours=12,
+    ),
+
+    # ---- soccer: three-way (home / draw / away) ----------------------------
+    # Kalshi prices each outcome as its own market (…-TIE for the draw) and
+    # Polymarket as three winner markets per match, so all three venues line
+    # up outcome for outcome.
+    "epl": SportConfig(
+        key="epl",
+        odds_api_sport="soccer_epl",
+        kalshi_series="KXEPLGAME",
+        polymarket_us_league="epl",
+        polymarket_us_winner_type="soccer_team_full_time_winner",
+        match_mode="roster",
+        three_way=True,
+        horizon_hours=240,          # league football is a weekly fixture list
+        match_tolerance_hours=12,
+    ),
+    "laliga": SportConfig(
+        key="laliga",
+        odds_api_sport="soccer_spain_la_liga",
+        kalshi_series="KXLALIGAGAME",
+        polymarket_us_league="lal",
+        polymarket_us_winner_type="soccer_team_full_time_winner",
+        match_mode="roster",
+        three_way=True,
+        horizon_hours=240,
+        match_tolerance_hours=12,
+    ),
+    "seriea": SportConfig(
+        key="seriea",
+        odds_api_sport="soccer_italy_serie_a",
+        kalshi_series="KXSERIEAGAME",
+        polymarket_us_league="",     # no Polymarket league for Serie A
+        polymarket_us_winner_type="soccer_team_full_time_winner",
+        match_mode="roster",
+        three_way=True,
+        horizon_hours=240,
+        match_tolerance_hours=12,
+    ),
+    "bundesliga": SportConfig(
+        key="bundesliga",
+        odds_api_sport="soccer_germany_bundesliga",
+        kalshi_series="KXBUNDESLIGAGAME",
+        polymarket_us_league="bun",
+        polymarket_us_winner_type="soccer_team_full_time_winner",
+        match_mode="roster",
+        three_way=True,
+        horizon_hours=240,
+        match_tolerance_hours=12,
+    ),
+    "ligue1": SportConfig(
+        key="ligue1",
+        odds_api_sport="soccer_france_ligue_one",
+        kalshi_series="KXLIGUE1GAME",
+        polymarket_us_league="",     # Kalshi + sportsbooks only
+        polymarket_us_winner_type="soccer_team_full_time_winner",
+        match_mode="roster",
+        three_way=True,
+        horizon_hours=240,
+        match_tolerance_hours=12,
+    ),
+    "mls": SportConfig(
+        key="mls",
+        odds_api_sport="soccer_usa_mls",
+        kalshi_series="KXMLSGAME",
+        polymarket_us_league="mls",
+        polymarket_us_winner_type="soccer_team_full_time_winner",
+        match_mode="roster",
+        three_way=True,
+        horizon_hours=240,
+        match_tolerance_hours=12,
     ),
 }
 
 # Each enabled sport costs 1 Odds API credit per Refresh (tennis costs 1 per
 # active tournament), so this list is what drives spend.
-ENABLED_SPORTS = ["mlb", "nfl", "ncaaf", "nba", "cbb", "atp", "wta"]
+ENABLED_SPORTS = ["mlb", "nfl", "ncaaf", "nba", "cbb", "nhl", "tennis", "ufc",
+                  "epl", "laliga", "seriea", "bundesliga", "ligue1", "mls"]
 
 # The sportsbooks used everywhere — moneylines and player props alike.
-# The Odds API bills bookmakers in blocks of ten, so all eight of these cost
+# The Odds API bills bookmakers in blocks of ten, so all nine of these cost
 # the SAME 1 credit per sport per request that two did (verified against
-# x-requests-last). Adding books is free up to ten; adding sports or markets
-# is not.
+# x-requests-last, including with BetRivers as the ninth). ONE more book is
+# free; an eleventh doubles the cost of every request, props included.
 ODDS_API_BOOKMAKERS = ",".join([
     "draftkings",
     "fanduel",
@@ -161,6 +295,7 @@ ODDS_API_BOOKMAKERS = ",".join([
     "fliff",
     "hardrockbet",
     "williamhill_us",   # Caesars — the Odds API still uses the William Hill key
+    "betrivers",
 ])
 
 # ---- scan pacing (terminal loop; the UI paces itself, see AUTO_* below) ----
@@ -287,6 +422,23 @@ class PropConfig:
     odds_api_markets: tuple       # 1 CREDIT PER GAME for each key listed
     outcome_name: str             # the outcome to keep ("Over" / "Yes")
     outcome_point: float = None   # and its point, where the market has one
+    # Per-market override of the pair above, because the SAME bet has a
+    # different shape depending on the key it is posted under: an anytime
+    # touchdown is "Yes" with no point under `player_anytime_td` and "Over"
+    # at 0.5 under `player_tds_over`. Without this, adding the second key
+    # billed for a market whose every outcome was then thrown away.
+    market_outcomes: dict = field(repr=False, default_factory=dict)
+    # Kalshi's prop tickers usually say WHEN the game is
+    # (KXMLBHR-26SEP291400PHIATL), which is what picks the right market when a
+    # player has two open. Some don't (KXNHLGOAL-26SEP29VANEDM): football gets
+    # away with that because a team plays once a week, hockey does not — a
+    # team can play on consecutive nights, and a player then has two open
+    # markets the matcher cannot tell apart, so it refuses both. When this is
+    # set, a ticker with no clock time falls back to occurrence_datetime and
+    # is matched within this many hours. (That field runs up to ~3h off the
+    # real start, which is why it is slack rather than a tight window;
+    # closest-wins does the actual choosing, and back-to-backs are a day apart.)
+    kalshi_occurrence_slack_hours: float = 0.0
     kalshi_series: str = ""
     kalshi_suffix: str = "-1"     # the 1+ line within the series
     pm_market_type: str = ""
@@ -299,17 +451,65 @@ class PropConfig:
     horizon_hours: float = 36
 
 
+# ---- game totals (over/under points) --------------------------------------
+# A total has a LINE, and the venues post different ones, so a row is a
+# (game, line) pair rather than a game. Unlike player props this costs ONE
+# Odds API credit for the whole sport, not one per game.
+@dataclass
+class TotalConfig:
+    key: str
+    sport_tag: str                  # which board sport these rows belong to
+    odds_api_sport: str
+    kalshi_series: str
+    pm_league: str = ""
+    pm_market_type: str = ""
+    over_label: str = "Over"
+    under_label: str = "Under"
+    horizon_hours: float = 240
+    match_tolerance_hours: float = 12
+
+
+TOTAL_MARKETS = {
+    "nfl_total": TotalConfig(
+        key="nfl_total",
+        sport_tag="nfl",
+        odds_api_sport="americanfootball_nfl",
+        kalshi_series="KXNFLTOTAL",
+        pm_league="nfl",
+        pm_market_type="football_team_full_game_total",
+    ),
+    "mlb_total": TotalConfig(
+        key="mlb_total",
+        sport_tag="mlb",
+        odds_api_sport="baseball_mlb",
+        kalshi_series="KXMLBTOTAL",
+        pm_league="mlb",
+        pm_market_type="baseball_team_full_game_total",
+        horizon_hours=36,
+        # tight, because a doubleheader puts the same pair on the same day
+        match_tolerance_hours=1.5,
+    ),
+}
+
+
 PROP_MARKETS = {
     "mlb_hr": PropConfig(
         key="mlb_hr", label="1+ HR", no_label="No HR", sport_tag="mlb-hr",
         odds_api_sport="baseball_mlb",
         # The books split home runs across two keys and EACH bills its own
-        # credit per game. Of our books, DraftKings, FanDuel, BetMGM, ESPN BET
-        # and Fanatics post under the alternate key, while Caesars posts ONLY
-        # under `batter_home_runs`. Querying just one key makes a whole group
-        # of books look like they offer no HR props. Add "batter_home_runs"
-        # here to bring Caesars in, at a second credit per game.
-        odds_api_markets=("batter_home_runs_alternate",),
+        # credit per game. Measured on Phillies @ Braves:
+        #   batter_home_runs_alternate -> DraftKings, FanDuel, BetMGM,
+        #                                 ESPN BET, Fanatics (Hard Rock: 2)
+        #   batter_home_runs           -> Caesars, Fliff, ESPN BET,
+        #                                 Hard Rock (18)
+        # Caesars and Fliff post ONLY under the second key, so with just the
+        # first their columns were empty on every player. Both keys use
+        # "Over" at 0.5, so no market_outcomes override is needed.
+        #
+        # 2 CREDITS PER GAME. That's ~8 a scan in the postseason (4 games) but
+        # ~50 in the regular season (~25 games in 36h) — drop the second key
+        # when the season restarts if that's too steep.
+        odds_api_markets=("batter_home_runs_alternate", "batter_home_runs"),
         outcome_name="Over", outcome_point=0.5,
         kalshi_series="KXMLBHR",
         pm_market_type="baseball_player_home_runs", pm_league="mlb",
@@ -317,15 +517,41 @@ PROP_MARKETS = {
     "nfl_td": PropConfig(
         key="nfl_td", label="1+ TD", no_label="No TD", sport_tag="nfl-td",
         odds_api_sport="americanfootball_nfl",
-        # `player_anytime_td` carries six of the seven books for one credit.
-        # ESPN BET posts touchdowns only under `player_tds_over` (point 0.5),
-        # which is the same bet but a second credit per game — add that key
-        # here if you want it, knowing it doubles the cost.
-        odds_api_markets=("player_anytime_td",),
+        # Two keys for one bet. `player_anytime_td` carries six of the seven
+        # books; ESPN BET posts touchdowns ONLY under `player_tds_over`, so
+        # without the second key its column is empty on every player. Verified
+        # on a live game: anytime-TD returned draftkings, caesars, fanduel,
+        # fliff, betmgm, hardrock and fanatics but no ESPN BET, while
+        # tds_over returned 27 ESPN BET players.
+        #
+        # THIS DOUBLES THE COST of a TD scan — props bill 1 credit per market
+        # PER GAME, so a 15-game slate is 30 credits rather than 15. Drop the
+        # second key to halve it again.
+        odds_api_markets=("player_anytime_td", "player_tds_over"),
         outcome_name="Yes", outcome_point=None,
+        market_outcomes={"player_tds_over": ("Over", 0.5)},
         kalshi_series="KXNFLTD",
         pm_market_type="football_player_touchdowns", pm_league="nfl",
         horizon_hours=120,      # Thursday through Monday: one week's slate
+    ),
+    "nhl_goal": PropConfig(
+        key="nhl_goal", label="1+ Goal", no_label="No Goal", sport_tag="nhl-goal",
+        odds_api_sport="icehockey_nhl",
+        # Split across two keys exactly like touchdowns, just with different
+        # books on each side. Measured on Panthers @ Hurricanes:
+        #   player_goal_scorer_anytime -> DraftKings, Caesars, FanDuel, BetMGM,
+        #                                 Fanatics ("Yes", no point)
+        #   player_goals               -> Hard Rock, ESPN BET, FanDuel
+        #                                 ("Over" at 0.5)
+        # Neither key alone covers the board, so both are queried: 2 CREDITS
+        # PER GAME. Fliff posts neither.
+        odds_api_markets=("player_goal_scorer_anytime", "player_goals"),
+        outcome_name="Yes", outcome_point=None,
+        market_outcomes={"player_goals": ("Over", 0.5)},
+        kalshi_series="KXNHLGOAL",
+        pm_market_type="hockey_player_goals", pm_league="nhl",
+        horizon_hours=36,       # a daily sport: tonight and tomorrow
+        kalshi_occurrence_slack_hours=6,
     ),
 }
 

@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import budget, config, parlay, props
+from . import budget, config, parlay, props, totals
 from .scan import (fresh_sportsbook_price, log_scan, refresh_depth,
                    refresh_exchange_quotes, scan_all)
 from .trading import kalshi_trader, polymarket_us_trader
@@ -36,6 +36,8 @@ def serialize(games, quota, now):
                     == "name" else "@"),
             "away": g.away,
             "home": g.home,
+            # every outcome in board order — three for soccer
+            "outcomes": g.sides(),
             "start": g.start.astimezone(timezone.utc).isoformat(),
             "quotes": [{
                 "book": q.book,
@@ -354,6 +356,31 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, 400)
             except kalshi_trader.TradingNotConfigured as e:
                 self._send_json({"error": str(e)}, 400)
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+        elif self.path == "/api/scan_totals":
+            # Over/under on a game's points. One credit for the WHOLE sport
+            # (the totals market comes back for every game in one call), so it
+            # is far cheaper than the per-game player props.
+            try:
+                req = self._read_body()
+                auto = bool(req.get("auto"))
+                tc = config.TOTAL_MARKETS.get(req.get("total") or "nfl_total")
+                if tc is None:
+                    raise ValueError(f"unknown total {req.get('total')!r}")
+                budget.gate(estimate=1, auto=auto)
+                rows, quota = totals.scan(tc)
+                budget.note_spend(quota, estimate=1)
+                self._send_json({
+                    "scanned_at": datetime.now(timezone.utc).isoformat(),
+                    "credits_remaining": quota.get("remaining"),
+                    "games": totals.to_games(rows, tc),
+                    "prop": tc.key,
+                    "quota": quota,
+                })
+            except budget.BudgetError as e:
+                self._send_json({"error": str(e), "budget": budget.status(),
+                                 "blocked": True}, 429)
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
         elif self.path == "/api/depth":

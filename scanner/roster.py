@@ -24,6 +24,14 @@ import unicodedata
 
 _ABBREV = {"st": "state", "univ": "university", "intl": "international"}
 
+# Club affixes, which the venues sprinkle on inconsistently: the Odds API says
+# "Bournemouth", Polymarket "AFC Bournemouth", and either may write "Liverpool
+# FC". They carry no identity, so they are dropped from the ends of a name —
+# on both sides, so the comparison stays symmetric. Only at the ends, and never
+# down to nothing, so a club actually called "FC" survives.
+_CLUB_AFFIX = {"fc", "afc", "cf", "sc", "ac", "ssc", "sv", "bsc", "vfb", "vfl",
+               "tsg", "rcd", "cd", "ud", "sd", "rc", "as", "ca", "club"}
+
 
 def _tokens(name: str):
     s = unicodedata.normalize("NFKD", str(name or ""))
@@ -33,7 +41,23 @@ def _tokens(name: str):
     out = []
     for t in s.split():
         out.append(_ABBREV.get(t, t))
+    while len(out) > 1 and out[0] in _CLUB_AFFIX:
+        out.pop(0)
+    while len(out) > 1 and out[-1] in _CLUB_AFFIX:
+        out.pop()
     return out
+
+
+# Words that carry no identity in a club name: founding years ("Bayer 04
+# Leverkusen"), and connectives in Spanish/Italian/Portuguese names ("Club
+# Atletico de Madrid" vs "Atletico Madrid").
+_FILLER = {"de", "del", "la", "le", "les", "el", "los", "las", "of", "the",
+           "a", "und", "di", "do", "da"}
+
+
+def _core(tokens):
+    """The identifying words of a name: no filler, no bare numbers."""
+    return {t for t in tokens if t not in _FILLER and not t.isdigit()}
 
 
 def _anchored(src, canon):
@@ -76,7 +100,21 @@ class Roster:
         exact = [n for n in self.names if self._tok[n] == t]
         if exact:
             return exact
-        return [n for n in self.names if _anchored(t, self._tok[n])]
+        hits = [n for n in self.names if _anchored(t, self._tok[n])]
+        if hits:
+            return hits
+        # Last resort, for clubs written out in full ("Club Atletico de
+        # Madrid" for "Atletico Madrid", "Real Betis Balompie" for "Real
+        # Betis"): one name's identifying words contain the other's.
+        core = _core(t)
+        if not core:
+            return []
+        out = []
+        for n in self.names:
+            c = _core(self._tok[n])
+            if c and (c <= core or core <= c):
+                out.append(n)
+        return out
 
     def resolve(self, raw):
         """A single unambiguous name, else None."""

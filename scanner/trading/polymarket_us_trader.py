@@ -34,6 +34,17 @@ import requests
 
 from .. import config
 
+
+def _nocache():
+    """A throwaway query param so the CDN can't hand back a stored copy.
+
+    Both exchanges put their public price endpoints behind a CDN cache —
+    Kalshi's /markets for 15s, Polymarket's /v1/markets, /book and /bbo for
+    30s — so a poll every second mostly got the same stale answer back. A
+    unique param is a cache miss every time (verified on both).
+    """
+    return {"_": str(time.time_ns())}
+
 HOST = "https://api.polymarket.us"
 GATEWAY = "https://gateway.polymarket.us"          # public market data
 
@@ -57,7 +68,8 @@ def live_quote(market_slug: str, long: bool):
     short side (NO)  -> sell YES into the best bid, i.e. cost 1 - bestBid
     """
     try:
-        r = _gw_session.get(f"{GATEWAY}/v1/markets/{market_slug}/book", timeout=20)
+        r = _gw_session.get(f"{GATEWAY}/v1/markets/{market_slug}/book",
+                            params=_nocache(), timeout=20)
         r.raise_for_status()
         md = r.json().get("marketData", {})
     except Exception:
@@ -171,7 +183,8 @@ def fillable(market_slug: str, long: bool, max_price: float):
     tells a hedger whether the whole leg can actually fill.
     """
     try:
-        r = _gw_session.get(f"{GATEWAY}/v1/markets/{market_slug}/book", timeout=20)
+        r = _gw_session.get(f"{GATEWAY}/v1/markets/{market_slug}/book",
+                            params=_nocache(), timeout=20)
         r.raise_for_status()
         md = r.json().get("marketData", {})
     except Exception:

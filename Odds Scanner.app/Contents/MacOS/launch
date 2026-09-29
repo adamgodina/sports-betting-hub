@@ -14,12 +14,21 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PROJECT="$(cd "$HERE/../../.." && pwd)"
 
 find_python() {
-  # A venv in the project wins, then whatever is on PATH, then the usual spots.
+  # The first python that can actually RUN the app, not merely the first that
+  # exists. Finder hands an app a bare PATH, so `command -v python3` there is
+  # macOS's own /usr/bin/python3 — which has none of the app's packages
+  # (no `cryptography`), so the server died on import while a perfectly good
+  # Anaconda python sat unused further down the list. Each candidate is asked
+  # to import the dependencies, and the first that can wins.
+  local p
   for p in "$PROJECT/.venv/bin/python3" "$PROJECT/venv/bin/python3" \
-           "$(command -v python3 2>/dev/null)" \
+           /opt/anaconda3/bin/python3 "$HOME/anaconda3/bin/python3" \
+           "$HOME/miniconda3/bin/python3" /opt/miniconda3/bin/python3 \
            /opt/homebrew/bin/python3 /usr/local/bin/python3 \
-           /opt/anaconda3/bin/python3 /usr/bin/python3; do
-    [ -n "$p" ] && [ -x "$p" ] && { echo "$p"; return; }
+           "$(command -v python3 2>/dev/null)" /usr/bin/python3; do
+    [ -n "$p" ] && [ -x "$p" ] || continue
+    "$p" -c "import requests, dotenv, cryptography" >/dev/null 2>&1 \
+      && { echo "$p"; return; }
   done
 }
 
@@ -28,9 +37,19 @@ is_up() { curl -s -o /dev/null --max-time 1 "$URL/api/last"; }
 
 if ! is_up; then
   PYTHON="$(find_python)"
-  [ -z "$PYTHON" ] && { alert "No python3 found. Install Python 3.9+ and try again."; exit 1; }
+  [ -z "$PYTHON" ] && { alert "No Python with the app's packages found. In Terminal, run: python3 -m pip install -r \\\"$PROJECT/requirements.txt\\\""; exit 1; }
   cd "$PROJECT" || { alert "Project folder not found at $PROJECT"; exit 1; }
-  [ -f .env ] || { alert "No .env yet. Copy .env.example to .env and add your Odds API key."; exit 1; }
+  # Credentials live wherever config._find_env looks for them, most explicit
+  # first: $ODDS_SCANNER_ENV, then ~/.config/odds-scanner/.env (outside the
+  # repo, which is where they belong), then the project's own .env. Checking
+  # only the last one told anyone with keys in the config dir that they had
+  # none — the server would have started fine.
+  if [ ! -f "${ODDS_SCANNER_ENV:-}" ] \
+     && [ ! -f "$HOME/.config/odds-scanner/.env" ] \
+     && [ ! -f .env ]; then
+    alert "No .env yet. Copy .env.example to ~/.config/odds-scanner/.env and add your Odds API key."
+    exit 1
+  fi
   mkdir -p data
   nohup "$PYTHON" -m scanner.server >> data/server.log 2>&1 &
   for _ in $(seq 1 30); do

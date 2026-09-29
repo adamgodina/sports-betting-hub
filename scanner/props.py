@@ -42,6 +42,17 @@ import requests
 from . import config
 from .sources.kalshi import _start_from_ticker
 
+
+def _nocache():
+    """A throwaway query param so the CDN can't hand back a stored copy.
+
+    Both exchanges put their public price endpoints behind a CDN cache —
+    Kalshi's /markets for 15s, Polymarket's /v1/markets, /book and /bbo for
+    30s — so a poll every second mostly got the same stale answer back. A
+    unique param is a cache miss every time (verified on both).
+    """
+    return {"_": str(time.time_ns())}
+
 ODDS_HOST = "https://api.the-odds-api.com"
 KALSHI_MARKETS = "https://api.elections.kalshi.com/trade-api/v2/markets"
 KALSHI_THETA = 0.07                 # taker fee coefficient
@@ -63,7 +74,7 @@ def _parse_iso(v):
         return None
 
 
-def _pick_for_game(entries, when):
+def _pick_for_game(entries, when, tolerance=PROP_MATCH_TOLERANCE):
     """The entry belonging to the same game as `when`, or None.
 
     Refusing is the right answer when it cannot be established: a wrong hedge
@@ -77,7 +88,7 @@ def _pick_for_game(entries, when):
         # Nothing to disambiguate with — only safe if there is no ambiguity.
         return entries[0] if len(entries) == 1 else None
     best = min(dated, key=lambda e: abs(e["start"] - when))
-    return best if abs(best["start"] - when) <= PROP_MATCH_TOLERANCE else None
+    return best if abs(best["start"] - when) <= tolerance else None
 
 
 def norm_player(name: str) -> str:
@@ -88,6 +99,30 @@ def norm_player(name: str) -> str:
     s = "".join(c for c in s if not unicodedata.combining(c))
     s = re.sub(r"[^a-z ]", "", s.lower())
     return re.sub(r"\s+", " ", s).strip()
+
+
+# A book's way of telling namesakes apart: "Elias Pettersson (2004)" is not
+# "Elias Pettersson". Vancouver carries both — the star center and a young
+# defenseman — and so, in other years, have Carolina and the Islanders
+# (Sebastian Aho). norm_player strips everything but letters, so without this
+# the two collapsed onto one row.
+_NAME_TAG = re.compile(r"^(.*?)\s*\(([^)]+)\)\s*$")
+
+
+def _player_key(raw: str):
+    """(row key, base key, tag) for a book's player name.
+
+    A tagged name gets a key of its own, which no exchange can ever produce —
+    Kalshi and Polymarket don't tag — so a tagged row never picks up an
+    exchange leg by accident.
+    """
+    m = _NAME_TAG.match(raw or "")
+    if not m:
+        k = norm_player(raw)
+        return k, k, None
+    base = norm_player(m.group(1))
+    tag = re.sub(r"\s+", " ", m.group(2)).strip().lower()
+    return f"{base} ({tag})", base, tag
 
 
 def american_to_prob(odds: float) -> float:
@@ -110,7 +145,7 @@ def fetch_kalshi_hr(pc) -> dict:
         params = {"series_ticker": pc.kalshi_series, "status": "open", "limit": 200}
         if cursor:
             params["cursor"] = cursor
-        r = requests.get(KALSHI_MARKETS, params=params, timeout=30)
+        r = requests.get(KALSHI_MARKETS, params={**params, **_nocache()}, timeout=30)
         r.raise_for_status()
         d = r.json()
         for m in d.get("markets", []):
@@ -123,11 +158,15 @@ def fetch_kalshi_hr(pc) -> dict:
                 continue
             yes = float(m.get("yes_ask_dollars") or 0)
             no = float(m.get("no_ask_dollars") or 0)
+            start = _start_from_ticker(m.get("event_ticker", ""))
+            if start is None and pc.kalshi_occurrence_slack_hours:
+                # no clock time in the ticker — see kalshi_occurrence_slack_hours
+                start = _parse_iso(m.get("occurrence_datetime"))
             out.setdefault(key, []).append({
                 "player": player,
                 "ticker": m["ticker"],
                 "event_ticker": m.get("event_ticker"),
-                "start": _start_from_ticker(m.get("event_ticker", "")),
+                "start": start,
                 "yes_ask": yes if 0 < yes < 1 else None,
                 "no_ask": no if 0 < no < 1 else None,
                 "exchange_index": m.get("exchange_index", -1),
@@ -162,7 +201,7 @@ def fetch_polymarket_hr(pc, game_slugs=None) -> dict:
 
         def one(slug):
             try:
-                r = session.get(f"{PM_GATEWAY}/v1/events", params={"slug": slug},
+                r = session.get(f"{PM_GATEWAY}/v1/events", params={"slug": slug, **_nocache()},
                                 timeout=30)
                 r.raise_for_status()
                 d = r.json()
@@ -261,21 +300,31 @@ def _event_props(session, pc, event_id):
         print(f"  [props] event {event_id[:8]} failed: {e}")
         return {}, None
     best = {}
+    tagged_by = {}          # base key -> books that listed a TAGGED namesake
+    listed_by = {}          # row key  -> books that listed it
     for bk in d.get("bookmakers", []):
         for mk in bk.get("markets", []):
             if mk.get("key") not in pc.odds_api_markets:
                 continue
+            # Same bet, different shape per key: an anytime touchdown is
+            # "Yes" with no point under `player_anytime_td` and "Over" at 0.5
+            # under `player_tds_over`, which is the only key ESPN BET posts it
+            # on. A home run is an "Over" at 0.5. So the outcome to keep is
+            # resolved PER MARKET, falling back to the prop's default.
+            want_name, want_point = pc.market_outcomes.get(
+                mk["key"], (pc.outcome_name, pc.outcome_point))
             for o in mk.get("outcomes", []):
-                # Anytime-TD markets name the outcome "Yes" with no point;
-                # home runs are an "Over" at 0.5. Same bet, different shape.
-                if o.get("name") != pc.outcome_name:
+                if o.get("name") != want_name:
                     continue
-                if pc.outcome_point is not None and o.get("point") != pc.outcome_point:
+                if want_point is not None and o.get("point") != want_point:
                     continue
                 player = o.get("description") or ""
-                key = norm_player(player)
+                key, base, tag = _player_key(player)
                 if not key:
                     continue
+                if tag:
+                    tagged_by.setdefault(base, set()).add(bk["key"])
+                listed_by.setdefault(key, set()).add(bk["key"])
                 prob = american_to_prob(float(o["price"]))
                 # Every book's price, not just the shortest. One credit buys
                 # the whole game from every book at once, so keeping only the
@@ -289,6 +338,26 @@ def _event_props(session, pc, event_id):
                 if cur is None or prob < cur["prob"]:
                     e["books"][bk["key"]] = {
                         "american": f"{float(o['price']):+.0f}", "prob": prob}
+    # Namesakes. When a game has "X" AND "X (tag)", the plain "X" is only
+    # trustworthy from a book that ALSO listed the tagged one — that book has
+    # visibly told them apart, so its plain name means the other player. A
+    # book listing only the plain name may mean either: Hard Rock priced plain
+    # "Elias Pettersson" at +1200, the defenseman's price, while every book
+    # that tagged him had the center at +300. Those quotes are dropped.
+    #
+    # And the row is marked contested, because the exchanges never tag: a
+    # Polymarket "Elias Pettersson" could be either man, and hedging one
+    # player's goal with the other's "No" is not a hedge at all. This is what
+    # produced a "+6.54% arb" — FanDuel's defenseman at +2000 against a "No"
+    # on a Pettersson nobody could identify.
+    for base, taggers in tagged_by.items():
+        e = best.get(base)
+        if not e:
+            continue
+        e["books"] = {b: v for b, v in e["books"].items() if b in taggers}
+        e["contested"] = True
+        if not e["books"]:
+            del best[base]
     meta = {"away": d.get("away_team"), "home": d.get("home_team"),
             "start": d.get("commence_time"),
             "books": sorted({b["key"] for b in d.get("bookmakers", [])}),
@@ -326,6 +395,9 @@ def scan(pc, max_events: int = None, top_per_game: int = None):
             results = list(pool.map(lambda e: _event_props(session, pc, e["id"]), events))
 
     billed = 0
+    # the Kalshi side is matched looser when its start is occurrence_datetime
+    k_tol = (timedelta(hours=pc.kalshi_occurrence_slack_hours)
+             if pc.kalshi_occurrence_slack_hours else PROP_MATCH_TOLERANCE)
     for ev, (book_best, meta) in zip(events, results):
         ev_start = _parse_iso(ev.get("commence_time"))
         if meta and meta.get("remaining"):
@@ -343,7 +415,10 @@ def scan(pc, max_events: int = None, top_per_game: int = None):
         for key, b in keep:
             if top_per_game and game_rows >= top_per_game:
                 break
-            k = _pick_for_game(kalshi.get(key), ev_start)
+            if b.get("contested"):
+                # an exchange can't say WHICH namesake it means — see above
+                continue
+            k = _pick_for_game(kalshi.get(key), ev_start, k_tol)
             pm = _pick_for_game(pmarket.get(key), ev_start)
             k_no = k.get("no_ask") if k else None
             pm_no = pm.get("no_ask") if pm else None
@@ -434,12 +509,14 @@ def to_games(rows, pc):
             if r.get("kalshi_yes"):
                 add("kalshi", yes_team, _kalshi_prob(r["kalshi_yes"]),
                     {"ticker": r["kalshi_ticker"], "ask": r["kalshi_yes"],
-                     "exchange_index": ki, "buy_no": False},
+                     "exchange_index": ki, "buy_no": False,
+                     "theta": KALSHI_THETA if config.INCLUDE_KALSHI_FEES else 0.0},
                     f"ask {r['kalshi_yes']:.2f}")
             if r.get("kalshi_no"):
                 add("kalshi", no_team, _kalshi_prob(r["kalshi_no"]),
                     {"ticker": r["kalshi_ticker"], "ask": r["kalshi_no"],
-                     "exchange_index": ki, "buy_no": True},
+                     "exchange_index": ki, "buy_no": True,
+                     "theta": KALSHI_THETA if config.INCLUDE_KALSHI_FEES else 0.0},
                     f"ask {r['kalshi_no']:.2f}")
 
         if r.get("pm_slug"):
@@ -448,11 +525,13 @@ def to_games(rows, pc):
                              if config.INCLUDE_POLYMARKET_US_FEES else v)
             if r.get("pm_yes"):
                 add("polymarket_us", yes_team, eff(r["pm_yes"]),
-                    {"market_slug": r["pm_slug"], "ask": r["pm_yes"], "long": True},
+                    {"market_slug": r["pm_slug"], "ask": r["pm_yes"], "long": True,
+                     "theta": theta if config.INCLUDE_POLYMARKET_US_FEES else 0.0},
                     f"ask {r['pm_yes']:.3f}")
             if r.get("pm_no"):
                 add("polymarket_us", no_team, eff(r["pm_no"]),
-                    {"market_slug": r["pm_slug"], "ask": r["pm_no"], "long": False},
+                    {"market_slug": r["pm_slug"], "ask": r["pm_no"], "long": False,
+                     "theta": theta if config.INCLUDE_POLYMARKET_US_FEES else 0.0},
                     f"ask {r['pm_no']:.3f}")
 
         games.append({"sport": pc.sport_tag, "away": yes_team, "home": no_team,

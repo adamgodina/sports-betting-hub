@@ -219,6 +219,24 @@
   }
   .chip.live.liveswitch svg { width: 28px; height: 28px; }
 
+  .sizebox {
+    display: inline-flex; align-items: center; gap: 6px; color: var(--muted);
+    font-size: 12px; background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 3px 9px; white-space: nowrap;
+  }
+  .sizebox input {
+    width: 54px; background: none; border: 0; color: var(--text);
+    font-size: 13px; font-weight: 650; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .sizebox input:focus { outline: none; }
+  .sizebox:focus-within { border-color: var(--accent); }
+  /* A price the book cannot actually fill at this size. */
+  .thin { color: var(--arb); font-size: 9px; margin-left: 2px; vertical-align: 2px; }
+  .stalefeed { color: var(--arb); }
+  .checking { color: var(--muted); font-size: 12px; font-style: italic; }
+  /* A number we could not confirm against the book. */
+  .unread { color: var(--muted); font-size: 11px; vertical-align: 2px; margin-left: 1px; }
   .controls {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     background: var(--panel); border: 1px solid var(--border);
@@ -355,7 +373,11 @@
   }
   .shardfix .shardnote { color: var(--muted); font-style: italic; }
 
-  #summary { color: var(--muted); font-size: 13px; margin: 0 2px 10px; }
+  .summaryrow {
+    display: flex; align-items: center; gap: 12px; margin: 0 2px 10px;
+  }
+  .summaryrow .sizebox { margin-left: auto; flex: none; }
+  #summary { color: var(--muted); font-size: 13px; min-width: 0; }
   #summary b { color: var(--text); }
 
   .tablescroll { overflow-x: auto; border: 1px solid var(--border);
@@ -666,6 +688,8 @@
   }
   .htotals .profit b.pos { color: var(--best); }
   .htotals .profit b.neg { color: #ff7b72; }
+  /* The draw is an outcome, not a team — it reads as one. */
+  td.teamname.drawname { color: var(--muted); font-style: italic; }
   #hedgeBothWrap { margin-top: 14px; }
   #hedgeBothBtn {
     width: 100%; border: 0; border-radius: 8px; padding: 11px 0;
@@ -816,7 +840,11 @@
   <div id="tradingBar">Checking trading accounts…</div>
 
   <div id="error"></div>
-  <div id="summary"></div>
+  <div class="summaryrow">
+    <div id="summary"></div>
+    <label class="sizebox" title="Every row is priced as a real trade of this size: the stakes that pay the same whichever way it lands, for this much cash in total. Exchange legs are the volume-weighted cost of the contracts that buys — not the handful resting at the touch.">
+      arb check for $<input id="priceSize" type="number" min="1" step="25" value="100"></label>
+  </div>
   <div id="tableWrap"></div>
 </div>
 
@@ -858,19 +886,13 @@
     <h2 style="margin:0 0 2px;font-size:16px;">Place order</h2>
     <div class="sub" id="hGame"></div>
     <div id="hLegs"></div>
-    <div class="htotals">
-      <!-- "total stake" used to sit here with its own input. It restated the
-           cost next to it, so it is gone; sizing is driven from either leg,
-           which is how it was reached in practice anyway. The input survives
-           hidden because the total is still what splits a fresh ticket. -->
-      <input id="hTotal" type="hidden" value="100">
-      <div class="cell"><b id="hCost">—</b><span>total cost</span></div>
-      <div class="cell profit"><b id="hPnlA">—</b><span id="hPnlALbl">if A wins</span></div>
-      <div class="cell profit"><b id="hPnlB">—</b><span id="hPnlBLbl">if B wins</span></div>
-      <div class="cell"><b id="hRoi">—</b><span id="hRoiLbl">EV ROI</span></div>
-    </div>
+    <!-- One profit cell per outcome, built in updateHedgeTotals: two for a
+         moneyline, three for soccer. The total input survives outside the
+         container because that is rewritten on every update. -->
+    <input id="hTotal" type="hidden" value="100">
+    <div class="htotals" id="hTotals"></div>
     <div id="hedgeBothWrap" style="display:none">
-      <button id="hedgeBothBtn" onclick="hedgeTradeBoth()">Place both orders</button>
+      <button id="hedgeBothBtn" onclick="hedgeTradeBoth()">Place all orders</button>
     </div>
     <div class="crossnote">Limit orders, whole contracts, re-quoted against the
       live book at submit time and crossed 1&cent; through the ask so they fill
@@ -885,6 +907,7 @@
 
 <script>
 const EXCHANGES = new Set(["kalshi", "polymarket_us"]);
+const DRAW = "Draw";   // matches config.DRAW server-side
 let BOOKS = [
   { key: "draftkings",  label: "DraftKings" },
   { key: "fanduel",     label: "FanDuel" },
@@ -894,6 +917,7 @@ let BOOKS = [
   { key: "fliff",       label: "Fliff" },
   { key: "hardrockbet", label: "Hard Rock" },
   { key: "williamhill_us", label: "Caesars" },
+  { key: "betrivers",      label: "BetRivers" },
   { key: "kalshi",         label: "Kalshi" },
   { key: "polymarket_us",  label: "Polymarket" },
 ];
@@ -918,7 +942,7 @@ let trading = { kalshi: { configured: false }, polymarket_us: { configured: fals
 const VENUE_LABEL = { kalshi: "Kalshi", polymarket_us: "Polymarket" };
 const BOOK_LABEL = { draftkings: "DraftKings", fanduel: "FanDuel",
   betmgm: "BetMGM", espnbet: "ESPN BET", fanatics: "Fanatics", fliff: "Fliff",
-  hardrockbet: "Hard Rock", williamhill_us: "Caesars" };
+  hardrockbet: "Hard Rock", williamhill_us: "Caesars", betrivers: "BetRivers" };
 /* A game's identity across snapshots. Object identity is NOT it: every paid
    scan replaces the whole game list with fresh objects from the server, so
    anything that remembers a game by reference is comparing against objects
@@ -934,6 +958,14 @@ function gameKey(g) {
   // price. Moneyline games have no title, so their key is unchanged in effect.
   return `${g.sport || "mlb"}|${g.title || ""}|${g.away}|${g.home}|${g.start}`;
 }
+
+/* Every outcome you can back, in board order. Two for a moneyline; three for
+   soccer, where the draw sits between the sides. Older cached scans have no
+   `outcomes`, so the pair is the fallback. */
+function sidesOf(g) {
+  return (g && g.outcomes && g.outcomes.length) ? g.outcomes : [g.away, g.home];
+}
+function isThreeWay(g) { return sidesOf(g).length > 2; }
 
 function bookLabel(key) {
   const b = BOOKS.find(x => x.key === key);
@@ -1448,19 +1480,28 @@ function setBonus(book, amt, min) {
    included. */
 function bonusPlan(game) {
   if (!bonus || !(bonus.amt > 0) || !selected.has(bonus.book)) return null;
+  const sides = sidesOf(game);
   let best = null;
-  for (const side of [game.away, game.home]) {
+  for (const side of sides) {
     const leg = quoteFor(game, bonus.book, side);
     if (!leg || !(leg.prob > 0) || !bonusQualifies(leg)) continue;
-    const other = side === game.away ? game.home : game.away;
-    const hedge = bestFor(game, other);
-    if (!hedge) continue;
-    const dA = 1 / leg.prob, dB = 1 / eProb(hedge);
-    if (!(dA > 1) || !(dB > 1)) continue;
-    const stake = bonus.amt * (dA - 1) / dB;
-    const profit = stake * (dB - 1);
+    const others = sides.filter(t => t !== side);
+    const hedges = others.map(t => bestFor(game, t));
+    if (hedges.some(h => !h)) continue;
+    const dA = 1 / leg.prob;
+    if (!(dA > 1)) continue;
+    // The free stake returns B(dA - 1) and nothing else, so that is the payout
+    // every hedge leg is sized to match: stake each at T x its price and the
+    // money is the same whichever outcome lands. Soccer just has two hedge
+    // legs instead of one.
+    const T = bonus.amt * (dA - 1);
+    const stakes = hedges.map(h => T * eProb(h));
+    const spend = stakes.reduce((x, y) => x + y, 0);
+    const profit = T - spend;
     if (!best || profit > best.profit)
-      best = { leg, side, hedge, other, stake, profit, rate: profit / bonus.amt };
+      best = { leg, side, others, hedges, stakes, payout: T, stake: spend,
+               hedge: hedges[0], other: others[0],
+               profit, rate: profit / bonus.amt };
   }
   return best;
 }
@@ -1483,23 +1524,30 @@ function boostPlanFor(game, bk) {
   const pct = boostOf(bk), M = boostMaxOf(bk);
   if (!pct || !M || !selected.has(bk)) return null;
   const price = q => q.book === bk ? q.prob : eProb(q);
+  const sides = sidesOf(game);
   let best = null;
-  for (const side of [game.away, game.home]) {
+  for (const side of sides) {
     const leg = quoteFor(game, bk, side);
     if (!leg || !(leg.prob > 0) || !boostQualifies(leg, bk)) continue;
-    const other = side === game.away ? game.home : game.away;
-    let hedge = null;
-    for (const q of game.quotes)
-      if (q.team === other && selected.has(q.book) && (!hedge || price(q) < price(hedge)))
-        hedge = q;
-    if (!hedge) continue;
-    const pA = Odds.boostProb(leg.prob, pct), pB = price(hedge);
-    if (!(pA > 0 && pB > 0)) continue;
-    const payout = M / pA, hedgeStake = payout * pB;
-    const profit = payout - M - hedgeStake;
+    const others = sides.filter(t => t !== side);
+    const hedges = others.map(t => {
+      let h = null;
+      for (const q of game.quotes)
+        if (q.team === t && selected.has(q.book) && (!h || price(q) < price(h))) h = q;
+      return h;
+    });
+    if (hedges.some(h => !h)) continue;
+    const pA = Odds.boostProb(leg.prob, pct);
+    if (!(pA > 0)) continue;
+    const payout = M / pA;                       // what the boosted bet returns
+    const stakes = hedges.map(h => payout * price(h));
+    const spend = stakes.reduce((x, y) => x + y, 0);
+    const profit = payout - M - spend;
+    const sum = pA + hedges.reduce((x, h) => x + price(h), 0);
     if (!best || profit > best.profit)
-      best = { book: bk, leg, side, hedge, other, stake: M, hedgeStake, payout,
-               profit, rate: profit / M, sum: pA + pB };
+      best = { book: bk, leg, side, others, hedges, stakes, stake: M,
+               hedgeStake: spend, payout, profit, rate: profit / M, sum,
+               hedge: hedges[0], other: others[0] };
   }
   return best;
 }
@@ -1569,10 +1617,158 @@ function applyBoostPlan(game) {
   }
 }
 
+/* ---------------- what a price actually costs ----------------
+
+   An exchange quote's headline price is the touch, and the touch is often a
+   handful of contracts: 22 at 28.5c with 5 behind it is not a 28.5c market.
+   Pricing off it invented arbitrage that could not be traded at any size.
+
+   So an exchange leg is priced at the VOLUME-WEIGHTED cost of filling the size
+   you actually intend to buy — walking the ladder the depth poll brings back —
+   and a book that cannot fill that size is not a price at all: it is dropped
+   from the comparison rather than flattered.
+
+   Sportsbooks are untouched: their price is their price, whatever the stake. */
+/* The board prices every row as a REAL trade: stakes that pay the same
+   whichever way it lands, for `tradeCash` of cash in total. An equal-payout
+   hedge buys the same number of contracts on every side (each pays $1), so one
+   size answers the whole row — and it is solved per row, because how many
+   contracts $100 buys depends on how deep that row's books are.
+
+   That is the honest arbitrage test: not "is the touch cheap" but "does $100
+   spread across these legs come back as more than $100". */
+let tradeCash = 100;
+try {
+  const v = parseFloat(localStorage.getItem("priceSize"));
+  if (v > 0) tradeCash = v;
+} catch (e) {}
+
+/* Average cost per contract of buying `n` from this ladder. */
+function vwapOf(levels, n) {
+  if (!levels || !levels.length || !(n > 0)) return null;
+  let filled = 0, cost = 0;
+  for (const [px, qty] of levels) {
+    const take = Math.min(qty, n - filled);
+    if (take <= 0) continue;
+    cost += take * px;
+    filled += take;
+    if (filled >= n - 1e-9) break;
+  }
+  if (!filled) return null;
+  return { price: cost / filled, filled, short: filled < n - 1e-9 };
+}
+
+/* The fee model matches the server's: theta x p x (1-p) per contract. The
+   coefficient rides on the quote because it is PER MARKET on Polymarket
+   (0.0695 on some, 0.06 on others) and zero when fees are switched off in
+   config — assuming a flat 0.06 priced every exchange leg ~0.2% too cheap,
+   which is its own source of arbitrage that isn't there. */
+function feeOf(q) {
+  const t = (q.meta || {}).theta;
+  return t == null ? (VENUE_THETA[q.book] || 0) : t;
+}
+function withFee(q, price) {
+  const theta = feeOf(q);
+  return price + theta * price * (1 - price);
+}
+
+/* Price of one quote at a given size: exchanges walk their ladder, books are
+   flat. Infinite when a measured book cannot fill that size at all, which is
+   what keeps the solver below from pretending 2 contracts is a market. */
+function priceAt(q, n) {
+  if (!EXCHANGES.has(q.book)) return eProb(q);
+  const lv = (q.meta || {}).levels;
+  if (!lv || !lv.length) return q.prob;          // not measured yet
+  const v = vwapOf(lv, n);
+  if (!v) return Infinity;
+  if (v.short) return Infinity;                  // the size simply is not there
+  return withFee(q, v.price);
+}
+
+/* How many contracts `cash` buys on this row, given that an equal-payout hedge
+   buys the same count on every side. Cost rises with size (you eat into the
+   book), so this is a bisection on a monotone function. Returns the size, and
+   whether the row can absorb the cash at all. */
+function sizeForCash(game, cash) {
+  const sides = sidesOf(game);
+  const cheapest = n => {
+    let total = 0;
+    for (const t of sides) {
+      let best = Infinity;
+      for (const q of game.quotes) {
+        if (!selected.has(q.book) || q.team !== t) continue;
+        const p = priceAt(q, n);
+        if (p < best) best = p;
+      }
+      if (!isFinite(best)) return Infinity;
+      total += best;
+    }
+    return total * n;                            // contracts cost price each
+  };
+  let lo = 0, hi = 1;
+  while (cheapest(hi) < cash && hi < 1e7) hi *= 2;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (cheapest(mid) < cash) lo = mid; else hi = mid;
+  }
+  // If the books run dry before the cash is spent, the row cannot absorb the
+  // trade at all: that is worth saying rather than quietly pricing a smaller
+  // one. (cheapest() returns Infinity the moment a side cannot fill.)
+  const spent = cheapest(lo);
+  return { size: Math.max(1, lo), capped: isFinite(spent) && spent < cash * 0.999 };
+}
+
+/* Stamp the row's trade size onto its quotes, so every price on the row — the
+   cells, the best column, the vig — is the price of the same real trade. */
+function sizeGame(game) {
+  const r = sizeForCash(game, tradeCash);
+  game._n = r.size;
+  game._capped = r.capped;
+  for (const q of game.quotes) q._n = r.size;
+}
+
+function quoteSize(q) { return (q && q._n > 0) ? q._n : tradeCash; }
+
+/* Has this row's book actually been read, or is it still the touch price?
+   An unmeasured row is priced off whatever size happens to rest at the touch,
+   which is the very thing that invents arbitrage — so it is marked rather than
+   presented as fact. */
+function rowMeasured(game) {
+  const ex = game.quotes.filter(q => EXCHANGES.has(q.book) && selected.has(q.book));
+  return ex.length === 0 || ex.every(q => ((q.meta || {}).levels || []).length);
+}
+
+/* Exchange price for a given size. Falls back to the quoted touch price when
+   the ladder has not been measured yet (the depth poll runs a beat behind). */
+function exProb(q, n) {
+  const lv = (q.meta || {}).levels;
+  if (!lv || !lv.length) return q.prob;
+  const v = vwapOf(lv, n);
+  return v ? withFee(q, v.price) : q.prob;
+}
+
+/* Can this exchange leg actually fill the size being priced? Unmeasured books
+   are given the benefit of the doubt; a measured one that cannot fill is not. */
+function fillsSize(q, n) {
+  if (!EXCHANGES.has(q.book)) return true;
+  const lv = (q.meta || {}).levels;
+  if (!lv || !lv.length) return true;
+  const v = vwapOf(lv, n || quoteSize(q));
+  return !!v && !v.short;
+}
+
 /* Effective price of a quote — boosted only on the one leg the plan chose. */
 function boostedNow(q) { return q && q._boostOn ? boostOf(q.book) : 0; }
-function eProb(q) { return q ? Odds.boostProb(q.prob, boostedNow(q)) : null; }
+function eProb(q) {
+  if (!q) return null;
+  // exchanges: what the row's own trade size actually costs; books: their price
+  if (EXCHANGES.has(q.book)) return exProb(q, quoteSize(q));
+  return Odds.boostProb(q.prob, boostedNow(q));
+}
 function eAmerican(q) {
+  // an exchange price is now the VWAP for the row's trade size, so the odds
+  // shown have to be that price's odds, not the touch's
+  if (EXCHANGES.has(q.book)) return Odds.american(eProb(q));
   return boostedNow(q) ? Odds.american(eProb(q)) : q.american;
 }
 
@@ -1752,36 +1948,71 @@ function quoteFor(game, book, team) {
 }
 
 function bestFor(game, team) {
-  let best = null;
-  for (const q of game.quotes)
-    if (selected.has(q.book) && q.team === team &&
-        (!best || eProb(q) < eProb(best))) best = q;
-  return best;
+  // A measured book that cannot fill the size on offer is excluded outright:
+  // it is exactly the 2-20 contracts at the touch that produced arbitrage
+  // nobody could trade. If that leaves nothing, the thin quote comes back so
+  // the row still shows a price rather than a dash.
+  let best = null, thin = null;
+  for (const q of game.quotes) {
+    if (!selected.has(q.book) || q.team !== team) continue;
+    if (!fillsSize(q, quoteSize(q))) {
+      if (!thin || eProb(q) < eProb(thin)) thin = q;
+      continue;
+    }
+    if (!best || eProb(q) < eProb(best)) best = q;
+  }
+  return best || thin;
+}
+
+/* The touch price, before size walks the ladder into it. `q.prob` is what the
+   venue quotes at the BBO (fee included for exchanges), so the vig built from
+   these is the headline number every other screen shows — worth seeing next to
+   the ROI that survives at size, since the gap between them IS the thin book. */
+function bboProb(q) {
+  if (!q) return null;
+  return EXCHANGES.has(q.book) ? q.prob : eProb(q);
+}
+function bboVig(game) {
+  let sum = 0;
+  for (const t of sidesOf(game)) {
+    let best = Infinity;
+    for (const q of game.quotes) {
+      if (!selected.has(q.book) || q.team !== t) continue;
+      const p = bboProb(q);
+      if (p != null && p < best) best = p;
+    }
+    if (!isFinite(best)) return null;
+    sum += best;
+  }
+  return (sum - 1) * 100;
 }
 
 function analyze(game) {
-  let ba = bestFor(game, game.away), bh = bestFor(game, game.home);
+  const sides = sidesOf(game);
+  let best = sides.map(t => bestFor(game, t));
   if (anchorBook && selected.has(anchorBook)) {
     // One leg has to be the pinned book. Which one is not obvious: pinning it
     // to the side where it happens to be cheapest can be the wrong call, since
     // that may be the side another book beats it on by even more. So price
-    // both arrangements and keep whichever pair is cheaper overall.
-    const pa = quoteFor(game, anchorBook, game.away);
-    const ph = quoteFor(game, anchorBook, game.home);
-    const pairs = [];
-    if (pa && bh) pairs.push([pa, bh]);
-    if (ph && ba) pairs.push([ba, ph]);
-    if (!pairs.length) return null;   // that book doesn't quote this game
+    // every arrangement — each outcome taken from the pinned book, the rest at
+    // the best price going — and keep whichever set is cheapest overall.
     let pick = null;
-    for (const [x, y] of pairs) {
-      const sum = eProb(x) + eProb(y);
-      if (!pick || sum < pick.sum) pick = { ba: x, bh: y, sum };
-    }
-    ba = pick.ba; bh = pick.bh;
+    sides.forEach((t, i) => {
+      const pinned = quoteFor(game, anchorBook, t);
+      if (!pinned) return;
+      const combo = best.slice();
+      combo[i] = pinned;
+      if (combo.some(q => !q)) return;
+      const sum = combo.reduce((acc, q) => acc + eProb(q), 0);
+      if (!pick || sum < pick.sum) pick = { combo, sum };
+    });
+    if (!pick) return null;            // that book doesn't quote this game
+    best = pick.combo;
   }
-  if (!ba || !bh) return null;
-  const sum = eProb(ba) + eProb(bh);
-  return { ba, bh, sum, roi: sum < 1 ? (1 / sum - 1) * 100 : 0,
+  if (best.some(q => !q)) return null;
+  const sum = best.reduce((acc, q) => acc + eProb(q), 0);
+  return { sides, best, ba: best[0], bh: best[best.length - 1], sum,
+           roi: sum < 1 ? (1 / sum - 1) * 100 : 0,
            bonus: bonusPlan(game), boost: boostPlan(game) };
 }
 
@@ -1829,10 +2060,24 @@ function sideCells(game, gi, team, best) {
       const plan = (tradeable && isBest && instantArmed())
         ? quickPlan(game, q) : null;
       const quick = plan ? qbtnHtml(gi, q, team, plan) : "";
+      const lv = (q.meta || {}).levels;
+      const rowN = Math.round(quoteSize(q));
+      const vw = lv ? vwapOf(lv, rowN) : null;
+      const thin = EXCHANGES.has(q.book) && vw && vw.short;
+      const priceNote = !EXCHANGES.has(q.book) ? ""
+        : vw ? ` — ${vw.short
+              ? `only ${Math.round(vw.filled).toLocaleString()} of the `
+                + `${rowN.toLocaleString()} contracts a $${tradeCash} trade needs; `
+                + `this is the average for what IS there`
+              : `average cost of ${rowN.toLocaleString()} contracts `
+                + `(what $${tradeCash} buys on this row)`
+                + (q.meta.ask ? `, touch ${(q.meta.ask * 100).toFixed(1)}¢` : "")}`
+            : " — size not measured yet, this is the touch price";
       html += `<td class="cellq ${off ? "off" : ""} ${isBest ? "best" : ""} ${tradeable ? "tradeable" : ""} ${plan ? "quick" : ""}"
-        title="${q.detail || ""}${tradeable ? " — click to trade" : ""}"${attrs}>
+        title="${esc((q.detail || "") + priceNote)}${tradeable ? " — click to trade" : ""}"${attrs}>
         ${tradeable ? '<span class="buytag">BUY</span>' : ""}${quick}
-        <div class="odds">${eAmerican(q)}${boostedNow(q) ? '<span class="boosted" title="your boost is applied to this leg">▲</span>' : ""}</div>
+        <div class="odds">${eAmerican(q)}${boostedNow(q) ? '<span class="boosted" title="your boost is applied to this leg">▲</span>' : ""}${
+          thin ? `<span class="thin" title="this book cannot fill the ${rowN.toLocaleString()} contracts a $${tradeCash} trade needs">⚠</span>` : ""}</div>
         <div class="prob">${(eProb(q) * 100).toFixed(1)}%</div></td>`;
     }
   }
@@ -1842,7 +2087,7 @@ function sideCells(game, gi, team, best) {
   return html;
 }
 
-function renderTable() {
+function renderTable(fromVerifier) {
   if (parlayView) return;       // the builder owns the page
   const wrap = document.getElementById("tableWrap");
   const summary = document.getElementById("summary");
@@ -1864,31 +2109,34 @@ function renderTable() {
   const hiddenLive = data.games.filter(g =>
     (!sportsOn || sportsOn.has(g.sport || "mlb")) && isLive(g) && !includeLive).length;
 
-  visible.forEach(applyBoostPlan);   // one boosted leg per book, per game
+  // Size each row for the cash on offer BEFORE any price is read: every
+  // number on the row — cells, best column, vig, ranking — is then the price
+  // of that one real trade.
+  visible.forEach(g => { applyBoostPlan(g); sizeGame(g); });
   const analyzed = visible.map(g => ({ g, a: analyze(g), live: isLive(g) }));
-  // Rank by combined price, cheapest (best) first, with a deterministic
-  // tiebreak. Without the tiebreak two games on the same number could swap
-  // places every tick for no reason a reader could see.
-  // With a bonus bet live, the question the board answers changes: not "where
-  // is the thinnest market" but "where does the free stake bank the most". So
-  // it ranks by raw winnings, highest first, and games the bonus cannot be
-  // placed on fall to the bottom.
-  // A boost with a max bet asks the same dollars question, so it ranks the
-  // same way. A live bonus bet still comes first: it is the pinned promo.
+  // The ranking follows whatever the row's headline number is:
+  //   * a bonus bet, or a boost with a max bet — the row leads with the DOLLARS
+  //     it banks at that fixed stake, so the board ranks by that, highest
+  //     first, and games the promo can't be placed on fall to the bottom;
+  //   * otherwise — combined price (vig), cheapest first, which is highest ROI
+  //     first for arbitrages.
+  // Both use a deterministic tiebreak, so two games on the same number don't
+  // swap places every tick.
   const boostMode = !bonus && anyBoostMax();
-  // Ranking is ALWAYS by vig (combined price), in every mode. Bonus bets and
-  // max-bet boosts used to re-rank by dollars banked, which read as a board
-  // that was simply out of order — both promos persist across reloads, so it
-  // stayed that way. Their dollar figure is still shown in the row.
-  const rank = (x, y) => (x.a ? x.a.sum : 9) - (y.a ? y.a.sum : 9)
-        || new Date(x.g.start) - new Date(y.g.start)
+  const tiebreak = (x, y) => new Date(x.g.start) - new Date(y.g.start)
         || (gameKey(x.g) < gameKey(y.g) ? -1 : 1);
+  const gain = x => bonus ? (x.a && x.a.bonus ? x.a.bonus.profit : -Infinity)
+                          : (x.a && x.a.boost ? x.a.boost.profit : -Infinity);
+  const rank = (bonus || boostMode)
+    ? (x, y) => (gain(y) === gain(x) ? 0 : gain(y) > gain(x) ? 1 : -1)
+        || tiebreak(x, y)
+    : (x, y) => (x.a ? x.a.sum : 9) - (y.a ? y.a.sum : 9) || tiebreak(x, y);
   // Always strictly ranked. There used to be a hover freeze here that held
   // row positions while the cursor was over the table (or a ticket was open),
   // so a Place order button couldn't move under a click. But the cursor is
   // over the table nearly all the time, and prices kept moving underneath the
   // held order — so worse games sat above better ones until the mouse left.
-  // The board's job is to be in vig order, so it always is.
+  // So the board is always in its ranking order.
   analyzed.sort(rank);
   sortedGames = analyzed.map(x => x.g);
 
@@ -1911,32 +2159,65 @@ function renderTable() {
     // With a bonus bet live the headline figure is the money it banks, since
     // that is the whole point of the row; the vig sits underneath it.
     const bst = !bp && boostMode && a && a.boost;
+    const nRows = sidesOf(g).length;
+    const measured = rowMeasured(g);
+    // An unverified arb is not a number worth printing: it is the touch price
+    // flattering itself, and the calculator would contradict it the moment it
+    // read the book. So it says "checking…" while verifyArbs does exactly that
+    // — and when the book could not be read at all (Polymarket rate-limits the
+    // request), it says so with a "?" instead of checking forever.
+    const unverified = isArb && !measured;
+    const checking = unverified && !verifyFailed(g);
+    const unread = unverified && !checking;
+    const roiPct = a ? (1 / a.sum - 1) * 100 : 0;
+    // Underneath sits the BBO vig — the touch-price number, which is what the
+    // row looks like before size eats into it. Repeating "ROI - $100" on every
+    // row said nothing; the gap between these two figures says everything.
+    const vig = a ? bboVig(g) : null;
     const sumCell = bst
-      ? `<td class="sumcell boostcell" rowspan="2">
+      ? `<td class="sumcell boostcell" rowspan="${nRows}">
            <div class="sumv ${bst.profit < 0 ? "negv" : ""}">${bst.profit < 0 ? "−" : ""}$${Math.abs(bst.profit).toFixed(2)}</div>
            <div class="roi">${(bst.rate * 100).toFixed(1)}% of $${bst.stake}</div>
            <div class="roi">${bst.sum < 1 ? "+" + ((1 / bst.sum - 1) * 100).toFixed(2) + "% ROI"
                                           : ((bst.sum - 1) * 100).toFixed(2) + "% vig"}</div>
            <span class="placebtn" data-hgi="${gi}">Place order</span></td>`
       : bp
-      ? `<td class="sumcell bonuscell" rowspan="2">
+      ? `<td class="sumcell bonuscell" rowspan="${nRows}">
            <div class="sumv">$${bp.profit.toFixed(2)}</div>
            <div class="roi">${(bp.rate * 100).toFixed(0)}% of bonus</div>
            <div class="roi">${((a.sum - 1) * 100).toFixed(2)}% vig</div>
            <span class="placebtn" data-hgi="${gi}">Place order</span></td>`
       : a
-      ? `<td class="sumcell" rowspan="2">
-           <div class="sumv">${isArb ? "+" + a.roi.toFixed(2) + "%" : ((a.sum - 1) * 100).toFixed(2) + "%"}</div>
-           <div class="roi">${isArb ? "ROI" : "vig"}</div>
+      ? `<td class="sumcell" rowspan="${nRows}" title="${esc(
+           `ROI of a $${tradeCash} trade, priced at size · `
+           + `${((a.sum - 1) * 100).toFixed(2)}% vig at that size · $${tradeCash} buys `
+           + `${Math.round(g._n || 0).toLocaleString()} contracts on this row`
+           + (checking ? " · reading the order books to confirm" : "")
+           + (unread ? " · the order book could not be read (the venue is rate "
+                     + "limiting); this is the touch price, open the ticket to "
+                     + "price it properly" : ""))}">
+           <div class="sumv">${checking ? `<span class="checking">checking…</span>`
+             : `${a.sum < 1 ? "+" : "\u2212"}${Math.abs(roiPct).toFixed(2)}%`
+               + (unread ? `<span class="unread" title="the order book could not be read - this is the touch price">?</span>` : "")}</div>
+           <div class="roi" title="best price on each side, before size">${
+             vig == null ? "&nbsp;"
+               : `${vig < 0 ? "\u2212" : ""}${Math.abs(vig).toFixed(2)}% vig`}</div>
            <span class="placebtn" data-hgi="${gi}">Place order</span></td>`
-      : `<td class="sumcell" rowspan="2"><span class="none">—</span></td>`;
-    rows += `<tr class="game-top ${isArb ? "arb" : ""}">
-      <td class="gameinfo" rowspan="2">
-        <div class="matchup">${g.title || `${g.away} ${g.sep || "@"} ${g.home}`}${isArb ? '<span class="arbtag">ARB</span>' : ""}${live ? '<span class="livetag">LIVE</span>' : ""}</div>
-        <div class="starttime">${g.matchup ? g.matchup + " · " : ""}${fmtTime(g.start)}</div></td>
-      <td class="teamname">${g.away}</td>${sideCells(g, gi, g.away, a ? a.ba : undefined)}${sumCell}</tr>`;
-    rows += `<tr class="${isArb ? "arb" : ""}">
-      <td class="teamname">${g.home}</td>${sideCells(g, gi, g.home, a ? a.bh : undefined)}</tr>`;
+      : `<td class="sumcell" rowspan="${nRows}"><span class="none">—</span></td>`;
+    // One row per outcome: two for a moneyline, three for soccer (the draw
+    // sits between the sides). The game and summary cells span them all.
+    const sides = sidesOf(g);
+    sides.forEach((team, si) => {
+      const best = a ? a.best[si] : undefined;
+      const head = si === 0
+        ? `<td class="gameinfo" rowspan="${sides.length}">
+             <div class="matchup">${g.title || `${g.away} ${g.sep || "@"} ${g.home}`}${isArb ? '<span class="arbtag">ARB</span>' : ""}${live ? '<span class="livetag">LIVE</span>' : ""}</div>
+             <div class="starttime">${g.matchup ? g.matchup + " · " : ""}${fmtTime(g.start)}</div></td>`
+        : "";
+      rows += `<tr class="${si === 0 ? "game-top " : ""}${isArb ? "arb" : ""}">
+        ${head}<td class="teamname ${team === DRAW ? "drawname" : ""}">${esc(team)}</td>` +
+        sideCells(g, gi, team, best) + (si === 0 ? sumCell : "") + `</tr>`;
+    });
   });
   // Nine book columns scroll horizontally, and the table is rebuilt every
   // tick — without this, any sideways scroll snapped back to the left once a
@@ -1956,7 +2237,7 @@ function renderTable() {
                  + `bet), double-click for a bonus bet.`}"` : "") +
         `>${boostHeadHtml(b)}</th>`).join("")}
       <th class="num stickybest">Best</th>
-      <th class="num stickyvig">Vig</th></tr></thead>
+      <th class="num stickyvig">ROI</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 
   const scroller = wrap.querySelector(".tablescroll");
@@ -1973,6 +2254,11 @@ function renderTable() {
   wrap.querySelectorAll(".placebtn").forEach(el => el.onclick = () => {
     openHedge(sortedGames[+el.dataset.hgi]);
   });
+
+  // Confirm any claimed arbitrage against the real book, right now. Not when
+  // the verifier itself is the one re-rendering — that is how it asked for the
+  // same books over and over.
+  if (!fromVerifier) verifyArbs();
 }
 
 /* Time to the next tick, not the time of the last one.
@@ -1990,6 +2276,7 @@ function renderCountdown() {
     return;
   }
   retuneTick();          // catch a tier change the moment it happens
+  tickWatchdog();        // and a clock that a throttled window has stopped
   if (slowMode) {
     const html = `<b>manual</b>`;
     if (html !== lastCountdownHtml) { el.innerHTML = html; lastCountdownHtml = html; }
@@ -2001,7 +2288,15 @@ function renderCountdown() {
   // count. Saying so beats a counter pinned at 0.0s, which is what it looked
   // like on the 1s tier — the round trip alone eats most of that second, so
   // the honest reading really is "fetching right now" nearly all the time.
-  const html = (tickInFlight || left <= 0.05)
+  // "updating…" is only true while something is actually in flight. When the
+  // feed itself has gone quiet, say how old the prices are — that is the one
+  // thing worth knowing before clicking one.
+  const feedAge = lastFeedAt ? (Date.now() - new Date(lastFeedAt)) / 1000 : null;
+  const stale = feedAge != null && feedAge > Math.max(5, (period / 1000) * 4);
+  const html = stale
+    ? `<b class="stalefeed">prices ${feedAge < 90 ? Math.round(feedAge) + "s"
+                                                  : Math.round(feedAge / 60) + "m"} old</b>`
+    : (tickInFlight || left <= 0.05)
     ? `<b>updating…</b>`
     // tenths only on the fast tier, where whole seconds would just blink 1/0
     : `update in <b>${period <= 2000 ? left.toFixed(1) : String(Math.ceil(left))}s</b>`;
@@ -2082,6 +2377,14 @@ function esc(t) {
 // under the other's name for the moment before its own scan landed.
 let propData = {}, propQuota = {}, propView = false, propKey = null, mlData = null;
 function propCur() { return propKey ? propData[propKey] || null : null; }
+/* Prop-shaped views share the board and the tick; only the endpoint and the
+   key differ. Totals bill per SPORT, player props per game. */
+function propScan() {
+  const sub = navCurrent();
+  return sub.endpoint === "totals"
+    ? { url: "/api/scan_totals", body: { total: propKey } }
+    : { url: "/api/scan_props", body: { prop: propKey } };
+}
 function propQ() { return propKey ? propQuota[propKey] || null : null; }
 
 /* ---------------- navigation ----------------
@@ -2092,19 +2395,44 @@ const NAV = [
   { key: "baseball", label: "Baseball", subs: [
       { key: "moneyline", label: "Moneyline", sport: "mlb" },
       { key: "hr",        label: "1+ HR",     props: "mlb_hr" },
+      { key: "runs",      label: "Totals",    props: "mlb_total", endpoint: "totals" },
   ]},
   { key: "football", label: "Football", subs: [
       { key: "nfl",   label: "NFL",   sport: "nfl" },
       { key: "ncaaf", label: "NCAAF", sport: "ncaaf" },
       { key: "td",    label: "1+ TD", props: "nfl_td" },
+      // Over/under on a game's points. Same prop plumbing, different endpoint:
+      // one credit covers the whole sport rather than one per game.
+      { key: "total", label: "Totals", props: "nfl_total", endpoint: "totals" },
   ]},
   { key: "basketball", label: "Basketball", subs: [
       { key: "nba", label: "NBA", sport: "nba" },
       { key: "cbb", label: "CBB", sport: "cbb" },
   ]},
+  { key: "hockey", label: "Hockey", subs: [
+      { key: "nhl",  label: "NHL",     sport: "nhl" },
+      { key: "goal", label: "1+ Goal", props: "nhl_goal" },
+  ]},
+  { key: "soccer", label: "Soccer", subs: [
+      { key: "epl",        label: "EPL",        sport: "epl" },
+      { key: "laliga",     label: "La Liga",    sport: "laliga" },
+      { key: "seriea",     label: "Serie A",    sport: "seriea" },
+      { key: "bundesliga", label: "Bundesliga", sport: "bundesliga" },
+      { key: "ligue1",     label: "Ligue 1",    sport: "ligue1" },
+      { key: "mls",        label: "MLS",        sport: "mls" },
+  ]},
+  // One board for the whole sport rather than a tab per tour: ATP and WTA are
+  // separate feeds at every venue, but they are one thing to look at, and the
+  // tour calendar means either one alone is often empty.
   { key: "tennis", label: "Tennis", subs: [
-      { key: "atp", label: "ATP", sport: "atp" },
-      { key: "wta", label: "WTA", sport: "wta" },
+      { key: "matches", label: "Matches", sport: "tennis" },
+  ]},
+  // One fight per row, two entrants, matched by name — the same shape as
+  // tennis. Kalshi prices each fighter as their own market (KXUFCFIGHT);
+  // Polymarket has one ufc_fight_winner market whose two sides are the two
+  // fighters.
+  { key: "ufc", label: "UFC", subs: [
+      { key: "fights", label: "Fights", sport: "ufc" },
   ]},
 ];
 let navSport = "baseball", navSub = "moneyline";
@@ -2353,11 +2681,13 @@ function applyView() {
   if (propView && propQ()) {
     const q = propQ(), seen = q.books_seen || [];
     document.getElementById("summary").innerHTML +=
-      ` · ${q.events_scanned} games · <b>${q.credits_spent}</b> credit` +
+      ` · ${q.lines != null ? q.lines + " lines / " + q.events_scanned + " games"
+                            : q.events_scanned + " games"} · <b>${q.credits_spent}</b> credit` +
       `${q.credits_spent === 1 ? "" : "s"}` +
       (q.cached_games ? `, ${q.cached_games} reused free` : "") +
-      ` · top ${q.top_per_game}/game` +
-      (seen.length && !seen.some(b => b === "draftkings" || b === "fanduel")
+      (q.top_per_game ? ` · top ${q.top_per_game}/game` : "") +
+      (q.lines == null && seen.length
+        && !seen.some(b => b === "draftkings" || b === "fanduel")
         ? ` <span class="hint">(DK/FanDuel not posting 1+ HR)</span>` : "");
   }
 }
@@ -2448,6 +2778,10 @@ function bestSportsbookQuote(game, team) {
 function quickPlan(game, q) {
   const amt = autoAmount();
   if (!amt || !canTrade(q)) return null;
+  // Instant buy sizes itself against THE other side, which only exists in a
+  // two-outcome market. Soccer's hedge is two legs, so it goes through the
+  // calculator instead.
+  if (isThreeWay(game)) return null;
   // The amount is assumed already staked on the OTHER side at the
   // best sportsbook price, so size this leg for equal profit either way.
   const other = q.team === game.home ? game.away : game.home;
@@ -2799,9 +3133,21 @@ function lockedIndex() {
 
 function legQuote(leg) { return leg.quotes[leg.sel]; }
 
+/* A leg's own price: the VWAP for the contracts THIS leg buys, which is not
+   the board's price unless the sizes happen to match. */
+function legProb(leg, contracts) {
+  const q = legQuote(leg);
+  if (!EXCHANGES.has(q.book)) return eProb(q);
+  return exProb(q, contracts > 0 ? contracts : quoteSize(q));
+}
+
 function legContracts(leg) {
   const q = legQuote(leg);
-  return roundContracts(q, leg.stake / eProb(q));  // contracts == payout ($1 each)
+  // sized off the board price first, then re-priced at that size: buying more
+  // costs more per contract, so one pass at the touch would under-size it
+  let n = roundContracts(q, leg.stake / eProb(q));
+  if (EXCHANGES.has(q.book)) n = roundContracts(q, leg.stake / legProb(leg, n));
+  return n;                                        // contracts == payout ($1 each)
 }
 
 /* What this leg will ACTUALLY cost and pay, after whole-contract rounding.
@@ -2820,64 +3166,68 @@ function legFill(leg) {
   }
   if (legTradeable(leg) || (EXCHANGES.has(q.book) && q.meta)) {
     const n = legContracts(leg);
-    return { contracts: n, cost: n * eProb(q), payout: n, rounded: true };
+    return { contracts: n, cost: n * legProb(leg, n), payout: n, rounded: true };
   }
   return { contracts: null, cost: leg.stake, payout: leg.stake / eProb(q),
            rounded: false };
 }
 
 function openHedge(game) {
-  // Open on the pair the BOARD chose, not just the cheapest quote per side.
+  // Open on the set the BOARD chose, not just the cheapest quote per outcome.
   // Those are the same thing until a book is pinned — and then they are not:
   // defaulting to cheapest would quietly drop the pin on the way into the
   // calculator, which is exactly where it matters, since this is the screen
   // that places the orders. Every quote is still listed, so any leg can be
   // changed by hand afterwards.
   const a = analyze(game);
-  const want = new Map(a ? [[game.away, a.ba], [game.home, a.bh]] : []);
+  const sides = sidesOf(game);
+  const want = new Map(a ? sides.map((t, i) => [t, a.best[i]]) : []);
   const mkLeg = team => {
     const quotes = game.quotes.filter(q => q.team === team)
-      .sort((a, b) => eProb(a) - eProb(b));
+      .sort((x, y) => eProb(x) - eProb(y));
     const i = quotes.indexOf(want.get(team));
     return { team, quotes, sel: i >= 0 ? i : 0, stake: 0 };
   };
-  const legs = [mkLeg(game.away), mkLeg(game.home)];
-  if (!legs[0].quotes.length || !legs[1].quotes.length) return;
+  const legs = sides.map(mkLeg);
+  if (legs.some(l => !l.quotes.length)) return;
 
-  // With a bonus bet live, open on the plan the board ranked the game by: the
-  // free stake on the leg it chose, at the amount of the promo, fixed — and
-  // the hedge derived from it. Anything else would show a different trade from
-  // the one the row advertised.
+  // Point a promo's legs at the plan the board ranked the game by: the promo
+  // leg where it chose, and its hedges on the other outcomes. Anything else
+  // would show a different trade from the one the row advertised.
+  const aim = (plan, promoIdx) => {
+    const pq = legs[promoIdx].quotes.indexOf(plan.leg);
+    if (pq >= 0) legs[promoIdx].sel = pq;
+    (plan.others || []).forEach((t, k) => {
+      const j = sides.indexOf(t);
+      const hq = j >= 0 ? legs[j].quotes.indexOf(plan.hedges[k]) : -1;
+      if (hq >= 0) legs[j].sel = hq;
+    });
+  };
+  const eitherWay = sides.length > 2 ? "whatever the result" : "either way";
   const bp = a && a.bonus;
-  let note = "stakes split so profit is equal either way";
+  let driver = "total";
+  let note = `stakes split so profit is equal ${eitherWay}`;
   if (bp) {
-    const bi = bp.side === game.away ? 0 : 1;
-    const bq = legs[bi].quotes.indexOf(bp.leg);
-    const hq = legs[1 - bi].quotes.indexOf(bp.hedge);
-    if (bq >= 0) legs[bi].sel = bq;
-    if (hq >= 0) legs[1 - bi].sel = hq;
+    const bi = sides.indexOf(bp.side);
+    aim(bp, bi);
     legs[bi].bonus = true;
     legs[bi].locked = true;              // the promo's amount is not a choice
     legs[bi].stake = bonus.amt;
     note = `$${bonus.amt} bonus bet on ${bp.side} — stake is not returned, `
-         + `so the hedge banks $${bp.profit.toFixed(2)} either way`;
+         + `so the hedge banks $${bp.profit.toFixed(2)} ${eitherWay}`;
   }
   // A max-bet boost opens the same way: the boosted leg at the max, fixed,
-  // and the hedge sized to it — the trade the row's dollar figure describes.
-  let driver = "total";
+  // and the hedges sized to it — the trade the row's dollar figure describes.
   const pl = !bp && a && a.boost && boostMaxOf(a.boost.book) ? a.boost : null;
   if (pl) {
-    const bi = pl.side === game.away ? 0 : 1;
-    const bq = legs[bi].quotes.indexOf(pl.leg);
-    const hq = legs[1 - bi].quotes.indexOf(pl.hedge);
-    if (bq >= 0) legs[bi].sel = bq;
-    if (hq >= 0) legs[1 - bi].sel = hq;
+    const bi = sides.indexOf(pl.side);
+    aim(pl, bi);
     legs[bi].stake = pl.stake;
     legs[bi].locked = true;
-    driver = bi === 0 ? "A" : "B";
+    driver = bi;
     note = `+${boostOf(pl.book)}% boost on ${pl.side} at the $${pl.stake} max — `
          + `hedged so it ${pl.profit >= 0 ? "banks" : "costs"} `
-         + `$${Math.abs(pl.profit).toFixed(2)} either way`;
+         + `$${Math.abs(pl.profit).toFixed(2)} ${eitherWay}`;
   }
   hedgeCtx = { game, legs };
   document.getElementById("hGame").textContent = game.title
@@ -2887,6 +3237,81 @@ function openHedge(game) {
   renderHedgeLegs();
   document.getElementById("hedgeOverlay").style.display = "flex";
   refreshDepthFor([game]);   // this game's size, fresh, regardless of rank
+}
+
+/* Any row claiming an arbitrage gets its order books read AT ONCE — including
+   in slow mode, where the depth poll does not run at all. That is the whole
+   difference between "+5.39%" and the truth: the touch price says arbitrage,
+   the book says otherwise, and the calculator already knew because opening it
+   reads the book. Free (no Odds API credits), and only for rows that claim
+   one, so the board does not read every book on screen. */
+/* Polymarket rate-limits its per-market book endpoint at about five reads
+   before it answers 429 (Retry-After: 10), and this used to ask for twelve at
+   once. Five came back, seven did not, and those rows stayed unmeasured — so
+   they sat on "checking…" until something else happened to re-render, at which
+   point it asked for twelve again and was refused again. Meanwhile clicking
+   Place order asked for ONE row and had the answer in 200ms, which is exactly
+   the difference the board could not explain.
+
+   So: a few rows per pass, paced by a timer rather than by re-rendering, and a
+   row that fails backs off instead of being asked again immediately. */
+// Polymarket allows roughly one book read every two seconds (a burst of five
+// or six, then a long refusal), and one row needs one read — both its sides
+// come off the same slug. So: two rows per pass, one pass every four seconds.
+const VERIFY_BATCH = 2;
+const VERIFY_PACE_MS = 4000;
+const VERIFY_BACKOFF_MS = [1500, 4000, 10000, 30000];
+const verifyState = new Map();     // gameKey -> { fails, next }
+let verifying = false;
+let verifyTimer = null;
+
+function verifyDue(g) {
+  const st = verifyState.get(gameKey(g));
+  return !st || Date.now() >= st.next;
+}
+/* Has a row been asked about and come back empty? Then its number is the touch
+   price and the board should say so rather than claim to still be checking. */
+function verifyFailed(g) {
+  const st = verifyState.get(gameKey(g));
+  return !!st && st.fails > 0;
+}
+function noteVerify(g, ok) {
+  const k = gameKey(g);
+  if (ok) { verifyState.delete(k); return; }
+  const st = verifyState.get(k) || { fails: 0, next: 0 };
+  st.fails = Math.min(st.fails + 1, VERIFY_BACKOFF_MS.length);
+  st.next = Date.now() + VERIFY_BACKOFF_MS[st.fails - 1];
+  verifyState.set(k, st);
+}
+function scheduleVerify(ms) {
+  clearTimeout(verifyTimer);
+  verifyTimer = setTimeout(verifyArbs, Math.max(250, ms));
+}
+
+async function verifyArbs() {
+  clearTimeout(verifyTimer);
+  if (verifying || !data || !data.games) return;
+  const pending = sortedGames.filter(g => {
+    const a = analyze(g);
+    return a && a.sum < 1 && !rowMeasured(g);
+  });
+  if (!pending.length) return;
+  const rows = pending.filter(verifyDue).slice(0, VERIFY_BATCH);
+  if (!rows.length) {              // every candidate is backing off — wait it out
+    const soonest = Math.min(...pending.map(
+      g => (verifyState.get(gameKey(g)) || { next: 0 }).next));
+    scheduleVerify(soonest - Date.now());
+    return;
+  }
+  verifying = true;
+  try {
+    await refreshDepthFor(rows);
+    for (const g of rows) noteVerify(g, rowMeasured(g));
+    renderTable(true);             // the corrected number, WITHOUT re-entering
+  } finally {
+    verifying = false;
+    scheduleVerify(VERIFY_PACE_MS);   // next batch on a timer, not on a render
+  }
 }
 
 /* One-off depth pull for specific games (used when a ticket opens). */
@@ -2924,30 +3349,46 @@ document.getElementById("hedgeOverlay").onclick = e => {
 };
 
 function hedgeRecalc(driver) {
-  const [A, B] = hedgeCtx.legs;
+  const legs = hedgeCtx.legs;
+  const p = legs.map(l => eProb(legQuote(l)));
+  const lock = lockedIndex();          // a fixed leg is never recomputed
+
   // Bonus mode has one degree of freedom, not two: the free stake is whatever
-  // the promo is worth, so the hedge is fully determined and the total box
-  // has nothing to drive. s = B(dA-1)/dB — the stake that pays the same
-  // whichever way the game goes, given the bonus stake never comes back.
-  const bi = A.bonus ? 0 : (B.bonus ? 1 : -1);
+  // the promo is worth, so every hedge follows from it and the total box has
+  // nothing to drive. Each hedge is sized to pay T = B(dA-1), the money the
+  // bonus itself returns, so the result is the same whichever outcome lands.
+  const bi = legs.findIndex(l => l.bonus);
   if (bi >= 0) {
-    const bl = hedgeCtx.legs[bi], hl = hedgeCtx.legs[1 - bi];
-    const dA = 1 / legQuote(bl).prob, dB = 1 / eProb(legQuote(hl));
-    hl.stake = (dA > 1 && dB > 1) ? bl.stake * (dA - 1) / dB : 0;
+    const dA = 1 / legQuote(legs[bi]).prob;
+    const T = dA > 1 ? legs[bi].stake * (dA - 1) : 0;
+    legs.forEach((l, i) => { if (i !== bi) l.stake = T * p[i]; });
     return;
   }
-  const pA = eProb(legQuote(A)), pB = eProb(legQuote(B));
-  const lock = lockedIndex();          // a fixed leg is never recomputed
+
   if (driver === "total") {
     const T = parseFloat(document.getElementById("hTotal").value) || 0;
-    if (lock === 0) B.stake = Math.max(0, T - A.stake);
-    else if (lock === 1) A.stake = Math.max(0, T - B.stake);
-    else { A.stake = T * pA / (pA + pB); B.stake = T * pB / (pA + pB); }
-  } else if (driver === "A") {
-    if (lock !== 1) B.stake = A.stake * pB / pA;
-  } else if (driver === "B") {
-    if (lock !== 0) A.stake = B.stake * pA / pB;
+    if (lock >= 0) {
+      // spread whatever is left over the legs that are still free
+      const rest = Math.max(0, T - legs[lock].stake);
+      const denom = p.reduce((s, v, i) => i === lock ? s : s + v, 0);
+      legs.forEach((l, i) => {
+        if (i !== lock) l.stake = denom > 0 ? rest * p[i] / denom : 0;
+      });
+    } else {
+      const denom = p.reduce((x, y) => x + y, 0);
+      legs.forEach((l, i) => { l.stake = denom > 0 ? T * p[i] / denom : 0; });
+    }
+    return;
   }
+
+  // Driven by one leg: everything else is sized to pay what that leg pays, so
+  // the money is identical whichever outcome comes in.
+  const i = typeof driver === "number" ? driver : (driver === "A" ? 0 : 1);
+  if (!(p[i] > 0)) return;
+  const payout = legs[i].stake / p[i];
+  legs.forEach((l, j) => {
+    if (j !== i && j !== lock) l.stake = payout * p[j];
+  });
 }
 
 function legTradeable(leg) { return canTrade(legQuote(leg)); }
@@ -2976,7 +3417,10 @@ function legEcon(leg) {
   const q = legQuote(leg);
   const f = legFill(leg);
   const theta = VENUE_THETA[q.book] || 0;
-  const ask = q.meta ? q.meta.ask : eProb(q);
+  // what the order will actually pay per contract at this size, not the touch
+  const ask = f.rounded && EXCHANGES.has(q.book)
+    ? (vwapOf((q.meta || {}).levels, f.contracts) || {}).price ?? q.meta.ask
+    : (q.meta ? q.meta.ask : eProb(q));
   const n = f.contracts;
   const notional = f.rounded ? n * ask : leg.stake;
   const fee = f.rounded ? theta * ask * (1 - ask) * n : 0;
@@ -3109,60 +3553,50 @@ function renderHedgeLegs() {
 }
 
 function updateHedgeTotals() {
-  const [A, B] = hedgeCtx.legs;
-  const fA = legFill(A), fB = legFill(B);
-  const cost = fA.cost + fB.cost;              // actual outlay after rounding
-  const pnlA = fA.payout - cost;               // this side wins, the other dies
-  const pnlB = fB.payout - cost;
+  const legs = hedgeCtx.legs;
+  const fills = legs.map(legFill);
+  const cost = fills.reduce((s, f) => s + f.cost, 0);   // outlay after rounding
+  const pnl = fills.map(f => f.payout - cost);          // this one wins, the rest die
 
   // In bonus mode the only real money is the hedge, so the total box shows
   // that rather than adding in a stake that never leaves your pocket — and it
   // is read-only, because the sizing follows from the promo, not from a total.
-  const bonusLeg = A.bonus || B.bonus;
+  const bonusLeg = legs.some(l => l.bonus);
   const tot = document.getElementById("hTotal");
-  tot.value = (bonusLeg ? cost : A.stake + B.stake).toFixed(2);
+  tot.value = (bonusLeg ? cost : legs.reduce((s, l) => s + l.stake, 0)).toFixed(2);
   tot.readOnly = !!bonusLeg;
-  tot.title = bonusLeg
-    ? "Cash at risk. With a bonus bet the sizing follows from the promo amount."
-    : "";
-  document.getElementById("hCost").textContent = "$" + cost.toFixed(2);
 
+  // The prices imply probabilities that sum to more than 1 (the vig) or, on an
+  // arb, less. Sharing that excess between them in proportion strips it out
+  // and leaves what the market actually thinks each outcome's chance is —
+  // the honest weight to read these figures against.
+  const q = legs.map(l => eProb(legQuote(l)));
+  const denom = q.reduce((x, y) => x + y, 0);
   const money = v => (v >= 0 ? "+$" : "\u2212$") + Math.abs(v).toFixed(2);
-  const put = (id, lblId, v, team, prob) => {
-    const el = document.getElementById(id);
-    // The chance sits beside the money rather than in the caption: the two
-    // belong together, since the figure only means anything weighted by how
-    // likely that outcome is. Kept in the caption's grey so it reads as an
-    // annotation on the number, not a second number.
-    el.innerHTML = esc(money(v)) + (prob ? `<span class="pct">${esc(prob)}</span>` : "");
-    el.className = v >= 0 ? "pos" : "neg";
-    document.getElementById(lblId).textContent = "if " + team + " wins";
-  };
-  // The two prices imply probabilities that sum to more than 1 (the vig) or,
-  // on an arb, less. Sharing that excess between them in proportion strips it
-  // out and leaves what the market actually thinks each side's chance is —
-  // which is the honest weight to read the two P&L figures against, since one
-  // of them is far likelier to be the one you get.
-  const qA = eProb(legQuote(A)), qB = eProb(legQuote(B));
-  const tot2 = qA + qB;
-  const shown = t => (tot2 > 0 ? `(${(t / tot2 * 100).toFixed(1)}%)` : "");
-  put("hPnlA", "hPnlALbl", pnlA, A.team, shown(qA));
-  put("hPnlB", "hPnlBLbl", pnlB, B.team, shown(qB));
+  const label = t => t === DRAW ? "if it's a draw" : `if ${t} wins`;
+  const cells = legs.map((l, i) => `<div class="cell profit">
+      <b class="${pnl[i] >= 0 ? "pos" : "neg"}">${esc(money(pnl[i]))}${
+        denom > 0 ? `<span class="pct">(${(q[i] / denom * 100).toFixed(1)}%)</span>` : ""}</b>
+      <span>${esc(label(l.team))}</span></div>`).join("");
 
   // Expected value, not the worst case: each outcome weighted by the vig-free
-  // chance shown beside it. On a balanced hedge the two are the same number, so
+  // chance shown beside it. On a balanced hedge they are the same number, so
   // nothing is lost there — but on an uneven one the worst case named a result
-  // that might be very unlikely, which is a poor guide to whether the bet is
-  // worth making. A normal hedge lands negative here, and should: that is the
-  // vig you are paying.
-  const ev = tot2 > 0 ? (qA * pnlA + qB * pnlB) / tot2 : 0;
-  const rEl = document.getElementById("hRoi");
-  rEl.textContent = (cost > 0 ? (ev / cost * 100).toFixed(2) : "0.00") + "%";
-  rEl.className = ev >= 0 ? "pos" : "neg";
-  document.getElementById("hRoiLbl").textContent = "EV ROI";
+  // that might be very unlikely. A normal hedge lands negative here, and
+  // should: that is the vig you are paying.
+  const ev = denom > 0
+    ? legs.reduce((s, l, i) => s + q[i] * pnl[i], 0) / denom : 0;
+  document.getElementById("hTotals").innerHTML =
+    `<div class="cell"><b id="hCost">$${cost.toFixed(2)}</b><span>total cost</span></div>`
+    + cells
+    + `<div class="cell"><b id="hRoi" class="${ev >= 0 ? "pos" : "neg"}">${
+        (cost > 0 ? (ev / cost * 100).toFixed(2) : "0.00")}%</b><span>EV ROI</span></div>`;
 
   document.getElementById("hedgeBothWrap").style.display =
-    (legTradeable(A) && legTradeable(B)) ? "block" : "none";
+    legs.every(legTradeable) ? "block" : "none";
+  const both = document.getElementById("hedgeBothBtn");
+  if (both && !both.disabled)
+    both.textContent = `Place all ${legs.length} orders`;
 }
 
 function hedgeSelChange(i, sel) {
@@ -3173,11 +3607,12 @@ function hedgeSelChange(i, sel) {
 
 function hedgeStakeChange(i, inp) {
   hedgeCtx.legs[i].stake = parseFloat(inp.value) || 0;
-  hedgeRecalc(i === 0 ? "A" : "B");
-  const other = 1 - i;
-  const oInp = document.getElementById("hStake" + other);
-  if (oInp && !hedgeCtx.legs[other].locked)
-    oInp.value = hedgeCtx.legs[other].stake.toFixed(2);
+  hedgeRecalc(i);
+  hedgeCtx.legs.forEach((leg, j) => {
+    if (j === i || leg.locked) return;
+    const other = document.getElementById("hStake" + j);
+    if (other) other.value = leg.stake.toFixed(2);
+  });
   refreshHedgeButtons();
   updateHedgeTotals();
 }
@@ -3250,12 +3685,13 @@ async function hedgeTradeLeg(i, btn) {
 
 async function hedgeTradeBoth() {
   const btn = document.getElementById("hedgeBothBtn");
+  const n = hedgeCtx ? hedgeCtx.legs.length : 0;
   btn.disabled = true; btn.textContent = "Placing…";
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < n; i++) {
     const legBtn = document.querySelector(`.legtradebtn[data-leg="${i}"]`);
     if (legBtn && !legBtn.disabled) await hedgeTradeLeg(i, legBtn);
   }
-  btn.textContent = "Place both orders";
+  btn.textContent = `Place all ${n} orders`;
   btn.disabled = false;
 }
 
@@ -3273,7 +3709,11 @@ let lastCountdownHtml = "";
    ticks, so it gets watched every second. Kalshi is batched (one request for
    every due ticker), Polymarket needs one request per market, so this is what
    keeps the request rate sane. */
-const DEPTH_GAMES = 5;          // how many top games to track
+// The rows whose order books get read. These carry the ladders every price
+// on the board depends on, so the list is the top rows PLUS any row that
+// currently reads as an arbitrage (see depthTick).
+const DEPTH_GAMES = 14;
+const DEPTH_MAX_GAMES = 40;     // ceiling once arb rows are added
 const DEPTH_THIN_USD = 500;     // < this much resting at the BBO counts as thin
 const DEPTH_THIN_MS = 1000;     // thin books: every second
 const DEPTH_DEEP_MS = 5000;     // deep books: every five
@@ -3316,15 +3756,18 @@ function mergeExchangeQuotes(payload) {
     for (const fq of fg.quotes) {
       const ex = g.quotes.find(q => q.book === fq.book && q.team === fq.team);
       if (!ex) { g.quotes.push(fq); continue; }
-      const knownDepth = (ex.meta || {}).depth;
-      const knownSweep = (ex.meta || {}).sweep;
       ex.prob = fq.prob;
       ex.american = fq.american;
       ex.detail = fq.detail;
-      ex.meta = Object.assign({}, ex.meta, fq.meta || {});
-      // the fast poll carries no size — keep the last depth we actually measured
-      if (ex.meta.depth == null) ex.meta.depth = knownDepth;
-      if (ex.meta.sweep == null) ex.meta.sweep = knownSweep;
+      // The fast poll carries prices, not sizes — and it sends the size fields
+      // as nulls, which a plain merge happily wrote over the ladder measured a
+      // moment earlier. Once a second, every Kalshi leg was un-measured, so any
+      // arb row fell back to "checking…" and the verifier started over forever.
+      // Nulls from the poll are absence of news, not news: they never clobber.
+      const merged = Object.assign({}, ex.meta);
+      for (const [k, v] of Object.entries(fq.meta || {}))
+        if (v != null) merged[k] = v;
+      ex.meta = merged;
       if (ex.meta.depth) ex.detail += ` ×${ex.meta.depth.toLocaleString()}`;
     }
   }
@@ -3356,11 +3799,12 @@ async function fetchExchanges(signal) {
 
 async function fetchSportsbooks(signal) {
   // The HR view is just another market now: same tick, same clock, no button.
-  const r = await fetch(propView ? "/api/scan_props" : "/api/scan", {
+  const scan = propView ? propScan() : null;
+  const r = await fetch(scan ? scan.url : "/api/scan", {
     signal,
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(propView ? { auto: true, prop: propKey }
-                                  : { sports: autoSports(), auto: true }),
+    body: JSON.stringify(scan ? { auto: true, ...scan.body }
+                              : { sports: autoSports(), auto: true }),
   });
   const j = await r.json();
   if (!r.ok) { j._httpFail = true; }
@@ -3368,7 +3812,14 @@ async function fetchSportsbooks(signal) {
 }
 
 function tickPeriodNow() {
-  const base = autoOn ? tickPeriod() : (autoCfg.idle_interval_s || 10) * 1000;
+  // The exchange poll is FREE, and it is the whole point of live mode — so the
+  // cadence follows what is ON SCREEN, not whether the paid sportsbook scan
+  // happens to be armed. Tying the two meant that a spend guard, a hidden
+  // window, or thirty idle minutes silently dropped live exchange prices to one
+  // poll every TEN SECONDS while the header still promised a 1-second clock.
+  // The paid half is still skipped when it is not armed (see masterTick), so a
+  // fast tick with the scan disarmed costs nothing.
+  const base = tickPeriod();
   if (!propView) return base;
   // Props bill 1 credit PER GAME, not 1 per sport, so a full slate is 5-15x a
   // moneyline tick. Rather than pick a cadence by hand, take the slower of the
@@ -3398,7 +3849,9 @@ async function masterTick() {
   // never rescheduled, and the countdown froze at 0s.
   const ctl = new AbortController();
   tickAbort = ctl;
-  const deadline = setTimeout(() => ctl.abort(), Math.max(4000, period * 3));
+  // Generous: a poll that takes 6s is slow, not dead. At 4s every NCAAF
+  // update was cancelled mid-flight, so live mode never changed at all.
+  const deadline = setTimeout(() => ctl.abort(), Math.max(15000, period * 3));
   tickInFlight = true;
 
   try {
@@ -3411,45 +3864,54 @@ async function masterTick() {
     // cached), so the exchange prices are already live. Running it anyway cost
     // ELEVEN SECONDS a tick — with no sport scope in that view it fanned out
     // across all seven — which is what pinned the countdown on "updating…".
-    const jobs = [
-      (propView || parlayView) ? Promise.resolve(null)
-               : fetchExchanges(ctl.signal).catch(e => ({ _err: e })),
-      (autoOn && !parlayView) ? fetchSportsbooks(ctl.signal).catch(e => ({ _err: e }))
-             : Promise.resolve(null),
-    ];
-    const [feed, scan] = await Promise.all(jobs);
-    if (gen !== tickGen) return;        // superseded mid-flight; drop the data
-
-    if (scan && !scan._err && !scan._httpFail) {
-      // Carrying old exchange quotes across a scan stops a column blanking
-      // between the sportsbook pull and the next price poll. Props need none
-      // of it — that scan fetches Kalshi and Polymarket itself on every call —
-      // and there it is actively wrong: a player the exchanges have stopped
-      // quoting would keep showing the stale price instead of going blank.
-      if (!propView) carryExchangeQuotes(data, scan);
-      // one tick, two possible payloads — keep them in their own slots so
-      // switching market does not show the other view's rows
-      if (scan.quota) { propData[scan.prop] = scan; propQuota[scan.prop] = scan.quota; }
-      else { mlData = scan; }
-      data = scan;
-      if (scan.budget) autoCfg = scan.budget;
-      scanErr = 0;
-    } else if (scan && scan.blocked) {
-      // a spend guard ended the run; the server has already disarmed
-      if (scan.budget) autoCfg = scan.budget;
-      autoOn = false;
-    } else if (scan) {
-      scanErr++;
-    }
-
-    if (feed && !feed._err) {
-      mergeExchangeQuotes(feed);
-      feedErr = 0;
-      if (needDepthSoon) { needDepthSoon = false; depthDueAt.clear(); }
-    } else if (feed) {
-      feedErr++;
-    }
-    refreshDerived();          // one render per tick, not one per response
+    // Each half is applied the moment it lands. Waiting for both let the
+    // slower feed hold the faster one hostage — one slow exchange poll froze
+    // the sportsbook prices too. Order does not matter: a scan carries the
+    // exchange quotes already merged across, and a feed merges into whatever
+    // board is current.
+    const applyScan = scan => {
+      if (gen !== tickGen || !scan) return;
+      if (!scan._err && !scan._httpFail) {
+        // Carrying old exchange quotes across a scan stops a column blanking
+        // between the sportsbook pull and the next price poll. Props need none
+        // of it — that scan fetches Kalshi and Polymarket itself on every call
+        // — and there it is actively wrong: a player the exchanges have
+        // stopped quoting would keep showing the stale price.
+        if (!propView) carryExchangeQuotes(data, scan);
+        // one tick, two possible payloads — keep them in their own slots so
+        // switching market does not show the other view's rows
+        if (scan.quota) { propData[scan.prop] = scan; propQuota[scan.prop] = scan.quota; }
+        else { mlData = scan; }
+        data = scan;
+        if (scan.budget) autoCfg = scan.budget;
+        scanErr = 0;
+      } else if (scan.blocked) {
+        // a spend guard ended the run; the server has already disarmed
+        if (scan.budget) autoCfg = scan.budget;
+        autoOn = false;
+      } else {
+        scanErr++;
+      }
+      refreshDerived();
+    };
+    const applyFeed = feed => {
+      if (gen !== tickGen || !feed) return;
+      if (!feed._err) {
+        mergeExchangeQuotes(feed);
+        feedErr = 0;
+        if (needDepthSoon) { needDepthSoon = false; depthDueAt.clear(); }
+      } else {
+        feedErr++;
+      }
+      refreshDerived();
+    };
+    await Promise.all([
+      ((propView || parlayView) ? Promise.resolve(null)
+         : fetchExchanges(ctl.signal).catch(e => ({ _err: e }))).then(applyFeed),
+      ((autoOn && !parlayView) ? fetchSportsbooks(ctl.signal).catch(e => ({ _err: e }))
+         : Promise.resolve(null)).then(applyScan),
+    ]);
+    if (gen !== tickGen) return;        // superseded mid-flight
   } catch (e) { /* a dropped tick is harmless; the next one re-reads */ }
   finally {
     clearTimeout(deadline);
@@ -3497,6 +3959,20 @@ function retuneTick() {
   tickTimer = setTimeout(masterTick, wait);
 }
 
+/* A tick that is overdue by more than a period is not late, it is stopped.
+
+   A window the OS or browser considers hidden gets its timers throttled — to
+   one firing per MINUTE once it has been hidden a while — so the chain that
+   re-arms itself from inside a timer simply stops re-arming. The board then
+   sat on "updating…" (a tick whose due time has passed has no time left to
+   count) while its quotes went minutes stale. Any timer that does fire, the
+   countdown's included, now notices and restarts the chain. */
+function tickWatchdog() {
+  if (slowMode || parlayView || tickInFlight) return;
+  const period = tickPeriodNow();
+  if (Date.now() - nextTickAt > Math.max(2000, period)) masterTick();
+}
+
 function depthKey(q) {
   return q.book === "kalshi" ? "k:" + q.meta.ticker
                              : "p:" + q.meta.market_slug;
@@ -3517,9 +3993,18 @@ function marketNotional(quotes) {
 async function depthTick() {
   const started = Date.now();
   try {
-    // group the tracked games' exchange quotes by market
+    // The top rows, PLUS every row that currently reads as an arbitrage —
+    // those are exactly the ones whose price has to be real, and an unmeasured
+    // one sorts high precisely because its touch price flatters it. Capped so
+    // a board full of thin rows cannot turn into hundreds of book reads.
+    const arbRows = sortedGames.filter(g => {
+      const a = analyze(g);
+      return a && a.sum < 1 && !rowMeasured(g);
+    });
+    const tracked = [...new Set([...sortedGames.slice(0, DEPTH_GAMES), ...arbRows])]
+      .slice(0, DEPTH_MAX_GAMES);
     const markets = new Map();
-    for (const g of sortedGames.slice(0, DEPTH_GAMES)) {
+    for (const g of tracked) {
       for (const q of g.quotes) {
         if (!q.meta || !EXCHANGES.has(q.book)) continue;
         const k = depthKey(q);
@@ -3569,15 +4054,23 @@ function mergeDepth(games, payload) {
   for (const g of games) {
     for (const q of g.quotes) {
       if (!q.meta) continue;
+      let d = null, side = null;
       if (q.book === "kalshi") {
-        const d = k[q.meta.ticker];
-        if (d && d.depth != null) q.meta.depth = d.depth;
-        if (d && d.sweep != null) q.meta.sweep = d.sweep;
+        d = k[q.meta.ticker];
+        // ONE ticker, two tradeable sides: a prop's "No HR" and a total's
+        // under are the NO side, and pricing them off the YES ladder prices
+        // the wrong half of the book.
+        side = d && q.meta.buy_no
+          ? { depth: d.no_depth, sweep: d.no_sweep, levels: d.no_levels }
+          : d;
       } else if (q.book === "polymarket_us") {
-        const side = (pm[q.meta.market_slug] || {})[q.meta.long ? "long" : "short"];
-        if (side && side.depth != null) q.meta.depth = side.depth;
-        if (side && side.sweep != null) q.meta.sweep = side.sweep;
+        side = (pm[q.meta.market_slug] || {})[q.meta.long ? "long" : "short"];
       }
+      if (!side) continue;
+      if (side.depth != null) q.meta.depth = side.depth;
+      if (side.sweep != null) q.meta.sweep = side.sweep;
+      // the ladder is what makes a real price possible — see vwapOf
+      if (side.levels) q.meta.levels = side.levels;
     }
   }
 }
@@ -3602,10 +4095,11 @@ async function doScan() {
   try {
     // In the HR view the manual pull is the props scan — otherwise Refresh
     // would replace the board with moneyline games.
-    const r = propView
-      ? await fetch("/api/scan_props", {
+    const scan = propView ? propScan() : null;
+    const r = scan
+      ? await fetch(scan.url, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ auto: false, prop: propKey }) })
+          body: JSON.stringify({ auto: false, ...scan.body }) })
       : await fetch("/api/scan", { method: "POST" });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || r.statusText);
@@ -3788,7 +4282,10 @@ function renderAuto() {
   const meta = document.getElementById("autoMeta");
   const why = autoOn ? null : autoCfg.blocked_by;
   meta.className = why ? "warn" : "";
-  meta.textContent = why ? `sportsbooks paused — ${why}` : "";
+  // Just the fact, in the header. The reason is a hover away rather than a
+  // sentence sitting in the chrome.
+  meta.textContent = why ? "sportsbooks paused" : "";
+  meta.title = why || "";
 }
 
 /* Any real interaction with the page counts as "still here". */
@@ -3798,7 +4295,12 @@ for (const ev of ["mousemove", "keydown", "click", "wheel", "touchstart"]) {
 }
 // Hiding the tab or closing it stops the beats on its own; these just make it
 // instant instead of waiting out the heartbeat timeout.
-document.addEventListener("visibilitychange", () => { autoBeat(); });
+document.addEventListener("visibilitychange", () => {
+  autoBeat();
+  // Back at the window: current prices NOW, not whenever a timer that has been
+  // throttled to once a minute gets around to firing.
+  if (!document.hidden && !slowMode && !parlayView) tickNow();
+});
 window.addEventListener("pagehide", () => {
   if (autoOn) navigator.sendBeacon("/api/auto",
     new Blob([JSON.stringify({ action: "stop", reason: "page closed" })],
@@ -3841,6 +4343,18 @@ function startFeeds() {
   if (!countdownTimer) countdownTimer = setInterval(renderCountdown, 100);
   if (!depthTimer && !slowMode) depthTimer = setTimeout(depthTick, 250);
 }
+
+const sizeInput = document.getElementById("priceSize");
+sizeInput.value = tradeCash;
+sizeInput.oninput = () => {
+  const v = parseFloat(sizeInput.value);
+  if (!(v > 0)) return;
+  tradeCash = v;
+  try { localStorage.setItem("priceSize", String(v)); } catch (e) {}
+  sortedGames = [];          // prices changed, so the ranking has to re-sort
+  renderTable();
+  if (hedgeCtx) { refreshHedgeButtons(); updateHedgeTotals(); }
+};
 
 document.getElementById("slowChip").onclick = toggleSlow;
 document.getElementById("allOnBtn").onclick = () => {

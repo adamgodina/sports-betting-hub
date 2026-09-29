@@ -13,11 +13,12 @@ import csv
 import json
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from . import config
-from .compare import MATCH_TOLERANCE, analyze, match_games
+from .compare import (MATCH_TOLERANCE, _same_entrant, analyze, match_games)
 from .roster import Roster
 from .sources import kalshi, oddsapi, polymarket_us
 
@@ -55,7 +56,15 @@ def scan_sport(sport_cfg, with_depth: bool = False,
             print(f"  [polymarket_us] fetch failed: {e}")
     games = match_games(sport_cfg.key, oa_events, k_events, pm_events,
                         tolerance=timedelta(
-                            hours=getattr(sport_cfg, "match_tolerance_hours", 1.5)))
+                            hours=getattr(sport_cfg, "match_tolerance_hours", 1.5)),
+                        three_way=getattr(sport_cfg, "three_way", False),
+                        draw_label=config.DRAW,
+                        # individual sports: one venue may print more of a
+                        # competitor's name than another (see _same_entrant)
+                        loose_names=getattr(sport_cfg, "match_mode",
+                                            "alias") == "name",
+                        exchange_only=getattr(sport_cfg, "exchange_only_rows",
+                                              False))
     return games, quota
 
 
@@ -74,10 +83,35 @@ def scan_all(with_depth: bool = False, include_exchanges: bool = True,
             if k in config.SPORTS] or config.ENABLED_SPORTS
     for key in keys:
         sport_cfg = config.SPORTS[key]
+        # A sport whose rows can come from the exchanges alone has to fetch
+        # them HERE — the 1s poll only re-prices rows that already exist, so
+        # leaving them out of the scan means they are never created at all.
+        want_ex = include_exchanges or getattr(sport_cfg, "exchange_only_rows",
+                                               False)
         games, quota = scan_sport(sport_cfg, with_depth=with_depth,
-                                  include_exchanges=include_exchanges)
+                                  include_exchanges=want_ex)
         all_games.extend(games)
     return all_games, quota, now
+
+
+def _teams_match(ev_teams, row_teams, loose):
+    if ev_teams == row_teams:
+        return True
+    if not loose or len(ev_teams) != 2 or len(row_teams) != 2:
+        return False
+    a, b = sorted(row_teams), sorted(ev_teams)
+    return ((_same_entrant(a[0], b[0]) and _same_entrant(a[1], b[1])) or
+            (_same_entrant(a[0], b[1]) and _same_entrant(a[1], b[0])))
+
+
+def _row_name(team, row_teams, loose):
+    """The row's spelling of this competitor — a row finds its prices by name."""
+    if not loose or team in row_teams:
+        return team
+    for name in row_teams:
+        if _same_entrant(team, name):
+            return name
+    return team
 
 
 def refresh_exchange_quotes(cached_games, sports=None):
@@ -96,7 +130,7 @@ def refresh_exchange_quotes(cached_games, sports=None):
     # multiplies the request rate for data nobody is looking at.
     keys = [k for k in (sports or config.ENABLED_SPORTS)
             if k in config.SPORTS] or config.ENABLED_SPORTS
-    fresh = []
+    jobs = []
     for key in keys:
         sport_cfg = config.SPORTS[key]
         # Roster-matched sports need the canonical names to resolve against;
@@ -105,10 +139,23 @@ def refresh_exchange_quotes(cached_games, sports=None):
                                     if g.get("sport") == key]) \
             if getattr(sport_cfg, "match_mode", "alias") == "roster" else None
         for src in (kalshi, polymarket_us):
-            try:
-                fresh.extend(src.fetch(sport_cfg, with_depth=False, roster=roster))
-            except Exception as e:
-                print(f"  [{src.__name__.rsplit('.', 1)[-1]}] poll failed: {e}")
+            jobs.append((src, sport_cfg, roster))
+
+    def poll(job):
+        src, sport_cfg, roster = job
+        try:
+            return src.fetch(sport_cfg, with_depth=False, roster=roster)
+        except Exception as e:
+            print(f"  [{src.__name__.rsplit('.', 1)[-1]}] poll failed: {e}")
+            return []
+
+    # Every venue and sport at once: the poll takes as long as its slowest
+    # feed rather than the sum of them (NCAAF was 6.5s serially).
+    fresh = []
+    with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as pool:
+        for evs in pool.map(poll, jobs):
+            fresh.extend(evs)
+    sport_cfg = config.SPORTS[keys[-1]]    # fallback used below, as before
 
     out = []
     for g in cached_games:
@@ -119,15 +166,20 @@ def refresh_exchange_quotes(cached_games, sports=None):
             continue
         quotes = []
         for ev in fresh:
-            if ev.teams != teams:
-                continue
             gcfg = config.SPORTS.get(g.get("sport")) or sport_cfg
+            # Individual sports: the venues print different amounts of a name,
+            # so the poll has to match the way the scan did — otherwise a row
+            # the scan built loosely would lose that venue's price one second
+            # later and flicker.
+            loose = getattr(gcfg, "match_mode", "alias") == "name"
+            if not _teams_match(ev.teams, teams, loose):
+                continue
             tol = timedelta(hours=getattr(gcfg, "match_tolerance_hours", 1.5))
             if abs(ev.start - start) > tol:
                 continue
             for q in ev.quotes:
                 quotes.append({
-                    "book": q.book, "team": q.team,
+                    "book": q.book, "team": _row_name(q.team, teams, loose),
                     "prob": round(q.prob, 5), "american": q.american,
                     "detail": q.detail, "meta": q.meta,
                 })
@@ -182,10 +234,9 @@ def refresh_depth(kalshi_tickers, polymarket_slugs):
 
     if kalshi_tickers:
         try:
-            for ticker, bk in kalshi.fetch_books(kalshi_tickers).items():
-                out["kalshi"][ticker] = {
-                    "ask": bk[0], "depth": bk[1],
-                    "sweep": bk[2] if len(bk) > 2 else None}
+            # levels ride along: the client prices each leg at the size it
+            # actually intends to buy, not at the touch
+            out["kalshi"] = kalshi.fetch_books(kalshi_tickers)
         except Exception as e:
             print(f"  [kalshi] depth refresh failed: {e}")
 

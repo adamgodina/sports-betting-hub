@@ -46,6 +46,12 @@ class MatchedGame:
     away: str
     start: datetime
     quotes: list = field(default_factory=list)
+    # Every outcome you can back, in board order. Two for a moneyline; three
+    # for soccer, where the draw sits between the sides.
+    outcomes: list = None
+
+    def sides(self):
+        return self.outcomes or [self.away, self.home]
 
     def best(self, team: str):
         qs = [q for q in self.quotes if q.team == team]

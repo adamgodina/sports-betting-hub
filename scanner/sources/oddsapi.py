@@ -91,7 +91,13 @@ def _fetch_one(sport_cfg, sport_key) -> tuple[list[SourceEvent], dict]:
                 if mkt["key"] != "h2h":
                     continue
                 for oc in mkt.get("outcomes", []):
-                    team = resolve(oc["name"])
+                    # Soccer's third outcome is not a team, so it never
+                    # resolves through the roster — it is the draw itself.
+                    if getattr(sport_cfg, "three_way", False) \
+                            and str(oc.get("name", "")).strip().lower() == "draw":
+                        team = config.DRAW
+                    else:
+                        team = resolve(oc["name"])
                     if not team:
                         continue
                     price = float(oc["price"])
