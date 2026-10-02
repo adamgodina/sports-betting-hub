@@ -2,7 +2,7 @@
 
 A local board that lines up sportsbook odds against Kalshi and Polymarket US,
 flags arbitrage, and places the exchange side of a hedge for you. Able to 
-automatically maximize and calculate optimal heding for profit boosts and bonus bets
+automatically maximize and calculate optimal hedging for profit boosts and bonus bets.
 
 - **Sportsbooks:** DraftKings, FanDuel, BetMGM, ESPN BET, Fanatics, Fliff,
   Hard Rock, Caesars, BetRivers (via [The Odds API](https://the-odds-api.com))
@@ -10,7 +10,7 @@ automatically maximize and calculate optimal heding for profit boosts and bonus 
 
 | Sport | Markets |
 |---|---|
-| Baseball | Moneyline, 1+ HR, Totals |
+| Baseball | Moneyline, 1+ HR, 2+ TB, Totals |
 | Football | NFL, NCAAF, 1+ TD, Totals |
 | Basketball | NBA, CBB |
 | Hockey | NHL, 1+ Goal |
@@ -18,36 +18,29 @@ automatically maximize and calculate optimal heding for profit boosts and bonus 
 | Tennis | Matches |
 | UFC | Fights |
 
-## Setup
+## Setup and run
 
-Requires Python 3.9+ on macOS.
+Requires macOS and Python 3.9 or newer (from python.org, Homebrew, or Apple's
+developer tools).
 
-```bash
-python3 -m pip install -r requirements.txt
-mkdir -p ~/.config/odds-scanner
-cp .env.example ~/.config/odds-scanner/.env
-```
+Double-click **Odds Scanner.app**, or run `./start.sh` in Terminal. The first
+run:
 
-Open `~/.config/odds-scanner/.env` and set `ODDS_API_KEY`. That is the only
-required key. Add Kalshi and Polymarket US keys only if you want to place
-orders from the board.
+1. Creates `~/.config/odds-scanner/.env` and opens it. Add your
+   `ODDS_API_KEY`, save, and start again.
+2. Builds a `.venv` in the project and installs the packages (about a minute).
+3. Starts the server and opens http://localhost:8765.
 
-Keep keys out of this folder. The Kalshi `.pem` belongs next to the `.env`,
-referenced by absolute path.
+macOS asks once to let Odds Scanner access the folder the project is in.
+Click Allow. If you downloaded the project as a zip, macOS may also block the
+app; run `xattr -dr com.apple.quarantine .` in the project folder.
 
-## Run
+Kalshi and Polymarket US keys are optional and only needed to place orders.
+Keep them, and the Kalshi `.pem`, in `~/.config/odds-scanner/`, not in the
+project.
 
-Double-click **Odds Scanner.app**, or:
-
-```bash
-python3 -m scanner.server
-```
-
-Then open http://localhost:8765. To stop it: `kill $(lsof -ti:8765)`.
-
-If the project is on your Desktop, macOS may ask to let the app read it.
-Allow it, or enable it in System Settings > Privacy & Security > Files and
-Folders.
+Server log: `~/Library/Logs/OddsScanner/server.log`. To stop the server:
+`kill $(lsof -ti:8765)`.
 
 ## Using the board
 
@@ -87,7 +80,7 @@ Only The Odds API costs credits.
 | Refresh | 1 per sport (14) |
 | Live updates | 1 per second with a live game on screen, 1 per 10 seconds otherwise |
 | Totals scan | 1 |
-| Prop scan (1+ HR, 1+ TD, 1+ Goal) | 2 per game |
+| Prop scan (1+ HR, 2+ TB, 1+ TD, 1+ Goal) | 2 per game |
 
 Server-side caps (90 per minute, 4,000 per day) apply to everything. Books are
 billed in blocks of 10, so a tenth book is free and an eleventh doubles every
@@ -129,6 +122,7 @@ scanner/
   sources/         Odds API, Kalshi, Polymarket US market data
   trading/         Kalshi and Polymarket US order placement
   static/          the web UI
+start.sh           setup and launch (the app runs this)
 ```
 
 `python3 -m scanner.scan` prints one scan to the terminal.

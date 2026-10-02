@@ -514,6 +514,15 @@ PROP_MARKETS = {
         kalshi_series="KXMLBHR",
         pm_market_type="baseball_player_home_runs", pm_league="mlb",
     ),
+    "mlb_tb": PropConfig(
+        key="mlb_tb", label="2+ TB", no_label="0-1 TB", sport_tag="mlb-tb",
+        odds_api_sport="baseball_mlb",
+        # Caesars, BetMGM and Fliff post only the standard key; FanDuel and BetRivers only the alternate.
+        odds_api_markets=("batter_total_bases_alternate", "batter_total_bases"),
+        outcome_name="Over", outcome_point=1.5,
+        kalshi_series="KXMLBTB", kalshi_suffix="-2",
+        pm_market_type="baseball_player_total_bases", pm_league="mlb", pm_line=2,
+    ),
     "nfl_td": PropConfig(
         key="nfl_td", label="1+ TD", no_label="No TD", sport_tag="nfl-td",
         odds_api_sport="americanfootball_nfl",
